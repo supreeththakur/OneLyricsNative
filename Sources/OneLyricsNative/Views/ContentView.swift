@@ -67,39 +67,23 @@ struct ContentView: View {
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
         }
-        // Handle Global Spacebar Play/Pause
-        .background(SpacebarHandler())
-        .onReceive(NotificationCenter.default.publisher(for: .togglePlayback)) { _ in
-            store.togglePlayPause()
+        .onAppear {
+            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if event.keyCode == 49 { // Spacebar
+                    // Check if user is typing in a text field
+                    if let firstResponder = NSApp.keyWindow?.firstResponder {
+                        let className = String(describing: type(of: firstResponder))
+                        if className.contains("NSText") || className.contains("Field") {
+                            return event
+                        }
+                    }
+                    store.togglePlayPause()
+                    return nil // swallow event
+                }
+                return event
+            }
         }
     }
 }
 
-// Invisible View to catch Spacebar presses globally
-struct SpacebarHandler: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = KeyView()
-        DispatchQueue.main.async {
-            view.window?.makeFirstResponder(view)
-        }
-        return view
-    }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-class KeyView: NSView {
-    override var acceptsFirstResponder: Bool { true }
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 49 { // Spacebar
-            // Using NotificationCenter to broadcast play/pause since we can't easily inject the store here without generic wrappers
-            NotificationCenter.default.post(name: .togglePlayback, object: nil)
-        } else {
-            super.keyDown(with: event)
-        }
-    }
-}
-
-extension Notification.Name {
-    static let togglePlayback = Notification.Name("togglePlayback")
-}

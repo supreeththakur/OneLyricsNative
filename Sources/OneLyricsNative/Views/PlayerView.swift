@@ -14,17 +14,23 @@ struct PlayerView: View {
                     if let bg = store.state.backgroundURL {
                         if bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov" {
                             if let bgPlayer = store.bgPlayer {
-                                VideoPlayer(player: bgPlayer)
-                                    .disabled(true)
-                                    .opacity(0.8)
+                                Color.clear
+                                    .overlay(
+                                        VideoPlayer(player: bgPlayer)
+                                            .disabled(true)
+                                            .opacity(0.8)
+                                    )
+                                    .clipped()
                             }
                         } else if let nsImage = NSImage(contentsOf: bg) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: geo.size.width, height: geo.size.height)
+                            Color.clear
+                                .overlay(
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .opacity(0.8)
+                                )
                                 .clipped()
-                                .opacity(0.8)
                         }
                     } else {
                         Color(white: 0.1) // Default empty player
