@@ -41,42 +41,80 @@ struct TimelineView: View {
                 Divider().background(Color.white.opacity(0.1))
                 
                 // Track Area
+                let totalWidth = max(geo.size.width, geo.size.width * store.timelineZoom)
+                
                 ScrollView(.horizontal, showsIndicators: true) {
-                    let totalWidth = geo.size.width * store.timelineZoom
-                    
-                    ZStack(alignment: .leading) {
-                        // Background track (Grid-like)
-                        Rectangle()
-                            .fill(Color(red: 0.08, green: 0.08, blue: 0.09))
-                            .frame(width: max(geo.size.width, totalWidth), height: 180)
+                    VStack(spacing: 0) {
+                        // Ruler (for Scrubbing)
+                        TimelineRuler(totalWidth: totalWidth, durationMs: store.state.durationMs)
+                            .frame(height: 30)
+                            .background(Color(white: 0.15))
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        guard store.state.durationMs > 0 else { return }
+                                        let percent = max(0, min(1, value.location.x / totalWidth))
+                                        store.seek(to: percent * store.state.durationMs)
+                                    }
+                            )
                         
-                        // Playhead
-                        let playheadX = store.state.durationMs > 0 ? (store.currentTimeMs / store.state.durationMs) * max(geo.size.width, totalWidth) : 0
-                        if store.state.durationMs > 0 {
+                        // Tracks
+                        ZStack(alignment: .leading) {
+                            // Grid Background
                             Rectangle()
-                                .fill(Color.red)
-                                .frame(width: 2, height: 180)
-                                .offset(x: playheadX)
-                                .zIndex(10)
-                        }
-                        
-                        // Lyrics Blocks
-                        ForEach(store.state.lyrics) { lyric in
-                            LyricBlockView(lyric: lyric, totalWidth: max(geo.size.width, totalWidth), durationMs: store.state.durationMs)
+                                .fill(Color(red: 0.08, green: 0.08, blue: 0.09))
+                                .frame(width: totalWidth, height: 180)
+                            
+                            // Playhead
+                            let playheadX = store.state.durationMs > 0 ? (store.currentTimeMs / store.state.durationMs) * totalWidth : 0
+                            if store.state.durationMs > 0 {
+                                Rectangle()
+                                    .fill(Color.red)
+                                    .frame(width: 2, height: 180)
+                                    .offset(x: playheadX)
+                                    .zIndex(10)
+                            }
+                            
+                            // Lyrics Blocks
+                            ForEach(store.state.lyrics) { lyric in
+                                LyricBlockView(lyric: lyric, totalWidth: totalWidth, durationMs: store.state.durationMs)
+                            }
                         }
                     }
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                guard store.state.durationMs > 0 else { return }
-                                let percent = max(0, min(1, value.location.x / max(geo.size.width, totalWidth)))
-                                store.seek(to: percent * store.state.durationMs)
-                            }
-                    )
                 }
                 .background(Color(red: 0.05, green: 0.05, blue: 0.06))
             }
         }
+    }
+}
+
+struct TimelineRuler: View {
+    let totalWidth: CGFloat
+    let durationMs: Double
+    
+    var body: some View {
+        Canvas { context, size in
+            guard durationMs > 0 else { return }
+            
+            // Draw ticks every 5 seconds
+            let totalSeconds = durationMs / 1000.0
+            let tickCount = Int(totalSeconds / 5.0)
+            
+            for i in 0...tickCount {
+                let x = CGFloat(i * 5) / CGFloat(totalSeconds) * size.width
+                
+                let path = Path { p in
+                    p.move(to: CGPoint(x: x, y: size.height - 10))
+                    p.addLine(to: CGPoint(x: x, y: size.height))
+                }
+                context.stroke(path, with: .color(Color.gray.opacity(0.5)), lineWidth: 1)
+                
+                let timeText = String(format: "%02d:%02d", (i * 5) / 60, (i * 5) % 60)
+                let text = Text(timeText).font(.system(size: 9)).foregroundColor(.gray)
+                context.draw(text, at: CGPoint(x: x + 2, y: size.height - 15), anchor: .bottomLeading)
+            }
+        }
+        .frame(width: totalWidth)
     }
 }
 
@@ -118,7 +156,7 @@ struct LyricBlockView: View {
                 .offset(x: 6, y: -6)
             }
         }
-        .offset(x: x, y: 74)
+        .offset(x: x, y: 30) // Positioned nicely within the track
         .onHover { hovering in
             isHovered = hovering
         }

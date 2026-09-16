@@ -19,7 +19,9 @@ struct PlayerView: View {
                         } else if let nsImage = NSImage(contentsOf: bg) {
                             Image(nsImage: nsImage)
                                 .resizable()
-                                .aspectRatio(contentMode: .fit)
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
                                 .opacity(0.8)
                         }
                     } else {
