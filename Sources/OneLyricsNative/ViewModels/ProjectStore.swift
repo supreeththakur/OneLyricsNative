@@ -12,6 +12,15 @@ class ProjectStore: ObservableObject {
     var player: AVPlayer?
     var timeObserver: Any?
     
+    // Fallback duration if audio is not loaded or NaN
+    var effectiveDuration: Double {
+        if state.durationMs > 0 && !state.durationMs.isNaN { return state.durationMs }
+        if let last = state.lyrics.max(by: { $0.endMs < $1.endMs }) {
+            return max(last.endMs + 5000, 60000) // Last lyric + 5s, or at least 60s
+        }
+        return 60000 // 60s default
+    }
+    
     func setAudio(url: URL) {
         state.audioURL = url
         setupPlayer(url: url)
@@ -67,11 +76,29 @@ class ProjectStore: ObservableObject {
         let item = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: item)
         
+        // Wait for duration to load async
+        Task {
+            if let asset = player?.currentItem?.asset {
+                do {
+                    let duration = try await asset.load(.duration)
+                    DispatchQueue.main.async {
+                        self.state.durationMs = duration.seconds.isNaN ? 0 : duration.seconds * 1000.0
+                    }
+                } catch {
+                    print("Failed to load duration")
+                }
+            }
+        }
+        
         let interval = CMTime(seconds: 0.05, preferredTimescale: 1000)
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self, self.isPlaying else { return }
             self.currentTimeMs = time.seconds * 1000.0
-            self.state.durationMs = self.player?.currentItem?.duration.seconds ?? 0 * 1000.0
+            
+            let dur = self.player?.currentItem?.duration.seconds ?? 0
+            if !dur.isNaN && dur > 0 {
+                self.state.durationMs = dur * 1000.0
+            }
         }
     }
 }

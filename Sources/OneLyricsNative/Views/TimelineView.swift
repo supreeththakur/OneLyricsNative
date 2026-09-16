@@ -46,15 +46,14 @@ struct TimelineView: View {
                 ScrollView(.horizontal, showsIndicators: true) {
                     VStack(spacing: 0) {
                         // Ruler (for Scrubbing)
-                        TimelineRuler(totalWidth: totalWidth, durationMs: store.state.durationMs)
+                        TimelineRuler(totalWidth: totalWidth, durationMs: store.effectiveDuration)
                             .frame(height: 30)
                             .background(Color(white: 0.15))
                             .gesture(
                                 DragGesture(minimumDistance: 0)
                                     .onChanged { value in
-                                        guard store.state.durationMs > 0 else { return }
                                         let percent = max(0, min(1, value.location.x / totalWidth))
-                                        store.seek(to: percent * store.state.durationMs)
+                                        store.seek(to: percent * store.effectiveDuration)
                                     }
                             )
                         
@@ -66,18 +65,17 @@ struct TimelineView: View {
                                 .frame(width: totalWidth, height: 180)
                             
                             // Playhead
-                            let playheadX = store.state.durationMs > 0 ? (store.currentTimeMs / store.state.durationMs) * totalWidth : 0
-                            if store.state.durationMs > 0 {
-                                Rectangle()
-                                    .fill(Color.red)
-                                    .frame(width: 2, height: 180)
-                                    .offset(x: playheadX)
-                                    .zIndex(10)
-                            }
+                            let playheadX = store.effectiveDuration > 0 ? (store.currentTimeMs / store.effectiveDuration) * totalWidth : 0
+                            
+                            Rectangle()
+                                .fill(Color.red)
+                                .frame(width: 2, height: 180)
+                                .offset(x: playheadX)
+                                .zIndex(10)
                             
                             // Lyrics Blocks
                             ForEach(store.state.lyrics) { lyric in
-                                LyricBlockView(lyric: lyric, totalWidth: totalWidth, durationMs: store.state.durationMs)
+                                LyricBlockView(lyric: lyric, totalWidth: totalWidth, durationMs: store.effectiveDuration)
                             }
                         }
                     }
