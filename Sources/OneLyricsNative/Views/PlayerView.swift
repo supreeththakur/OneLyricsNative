@@ -5,58 +5,65 @@ struct PlayerView: View {
     @EnvironmentObject var store: ProjectStore
     
     var body: some View {
-        ZStack {
-            // Background Layer
-            if let bg = store.state.backgroundURL {
-                if bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov" {
-                    VideoPlayer(player: AVPlayer(url: bg))
-                        .disabled(true) // Disable controls
-                        .opacity(0.8)
-                } else if let nsImage = NSImage(contentsOf: bg) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .opacity(0.8)
-                }
-            } else {
-                Color.black
-            }
-            
-            // Lyrics Overlay
-            VStack {
-                Spacer()
-                if let currentLyric = store.state.lyrics.first(where: { store.currentTimeMs >= $0.startMs && store.currentTimeMs <= $0.endMs }) {
-                    Text(currentLyric.text)
-                        .font(.system(size: store.state.typography.fontSize, weight: .bold, design: .default))
-                        .foregroundColor(Color(hex: store.state.typography.color))
-                        .shadow(color: .white, radius: store.state.typography.glow)
-                        .multilineTextAlignment(.center)
-                        .padding()
-                        // Animation could go here based on templateId
-                        .transition(.opacity)
-                }
-                Spacer()
-            }
-            
-            // Playback Controls Overlay (bottom left)
-            VStack {
-                Spacer()
-                HStack {
-                    Button(action: { store.togglePlayPause() }) {
-                        Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title)
-                            .foregroundColor(.white)
+        GeometryReader { geo in
+            ZStack {
+                // Video Background Layer
+                Color.black // Letterbox background
+                
+                ZStack {
+                    if let bg = store.state.backgroundURL {
+                        if bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov" {
+                            VideoPlayer(player: AVPlayer(url: bg))
+                                .disabled(true)
+                                .opacity(0.8)
+                        } else if let nsImage = NSImage(contentsOf: bg) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .opacity(0.8)
+                        }
+                    } else {
+                        Color(white: 0.1) // Default empty player
                     }
-                    .buttonStyle(.plain)
-                    .padding()
                     
-                    Text(formatTimecode(ms: store.currentTimeMs))
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(.white)
-                    
-                    Spacer()
+                    // Lyrics Overlay
+                    VStack {
+                        Spacer()
+                        if let currentLyric = store.state.lyrics.first(where: { store.currentTimeMs >= $0.startMs && store.currentTimeMs <= $0.endMs }) {
+                            Text(currentLyric.text)
+                                .font(.system(size: store.state.typography.fontSize, weight: .bold, design: .default))
+                                .foregroundColor(Color(hex: store.state.typography.color))
+                                .shadow(color: .white, radius: store.state.typography.glow)
+                                .multilineTextAlignment(.center)
+                                .padding()
+                                .transition(.opacity)
+                        }
+                        Spacer()
+                    }
                 }
-                .background(Color.black.opacity(0.5))
+                .aspectRatio(16/9, contentMode: .fit)
+                .frame(width: geo.size.width, height: geo.size.height)
+                
+                // Playback Controls Overlay (bottom left)
+                VStack {
+                    Spacer()
+                    HStack {
+                        Button(action: { store.togglePlayPause() }) {
+                            Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.title)
+                                .foregroundColor(.white)
+                        }
+                        .buttonStyle(.plain)
+                        .padding()
+                        
+                        Text(formatTimecode(ms: store.currentTimeMs))
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                    }
+                    .background(Color.black.opacity(0.5))
+                }
             }
         }
     }

@@ -12,6 +12,9 @@ struct OneLyricsNativeApp: App {
                 // Default dark mode appearance
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1000, minHeight: 700)
+                .onAppear {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
         }
         .windowStyle(HiddenTitleBarWindowStyle())
         .commands {

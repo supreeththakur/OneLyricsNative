@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AssetSidebar: View {
     @EnvironmentObject var store: ProjectStore
@@ -88,7 +89,7 @@ struct AssetSidebar: View {
                 Text("Lyrics").font(.subheadline).foregroundColor(.gray)
                 
                 HStack(spacing: 12) {
-                    Button(action: { /* Import Lyrics */ }) {
+                    Button(action: { importLyrics() }) {
                         Text("Import File")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(maxWidth: .infinity)
@@ -149,6 +150,43 @@ struct AssetSidebar: View {
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
             store.setBackground(url: url)
+        }
+    }
+    
+    private func importLyrics() {
+        let panel = NSOpenPanel()
+        // Allow .srt, .lrc, and .txt
+        panel.allowedContentTypes = [
+            UTType.plainText, 
+            UTType(filenameExtension: "srt"),
+            UTType(filenameExtension: "lrc")
+        ].compactMap { $0 }
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                let content = try String(contentsOf: url, encoding: .utf8)
+                
+                // Try parsing as SRT
+                let blocks = SRTParser.parse(content: content)
+                
+                store.clearLyrics()
+                
+                if blocks.isEmpty {
+                    // Fallback to basic text parsing if not a valid SRT
+                    let lines = content.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    var currentMs: Double = 0
+                    for line in lines {
+                        store.addLyric(LyricBlock(text: line, startMs: currentMs, endMs: currentMs + 3000))
+                        currentMs += 3500
+                    }
+                } else {
+                    for block in blocks {
+                        store.addLyric(block)
+                    }
+                }
+            } catch {
+                print("Failed to read lyrics: \(error)")
+            }
         }
     }
 }
