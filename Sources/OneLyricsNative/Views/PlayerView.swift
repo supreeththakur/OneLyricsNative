@@ -5,84 +5,103 @@ struct PlayerView: View {
     @EnvironmentObject var store: ProjectStore
     
     var body: some View {
-        GeometryReader { geo in
+        ZStack {
+            // Letterbox background
+            Color.black
+            
+            // 16:9 Canvas - fixed aspect ratio, never changes size with content
             ZStack {
-                // Video Background Layer
-                Color.black // Letterbox background
-                
-                ZStack {
-                    if let bg = store.state.backgroundURL {
-                        if bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov" {
-                            if let bgPlayer = store.bgPlayer {
-                                Color.clear
-                                    .overlay(
-                                        VideoPlayer(player: bgPlayer)
-                                            .disabled(true)
-                                            .opacity(0.8)
-                                    )
-                                    .clipped()
-                            }
-                        } else if let nsImage = NSImage(contentsOf: bg) {
+                if let bg = store.state.backgroundURL {
+                    if bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov" {
+                        if let bgPlayer = store.bgPlayer {
                             Color.clear
                                 .overlay(
-                                    Image(nsImage: nsImage)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .opacity(0.8)
+                                    VideoPlayer(player: bgPlayer)
+                                        .disabled(true)
                                 )
                                 .clipped()
                         }
-                    } else {
-                        Color(white: 0.1) // Default empty player
+                    } else if let nsImage = NSImage(contentsOf: bg) {
+                        Color.clear
+                            .overlay(
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .scaledToFill()
+                            )
+                            .clipped()
                     }
-                    
-                    // Lyrics Overlay
-                    VStack {
-                        Spacer()
-                        if let currentLyric = store.state.lyrics.first(where: { store.currentTimeMs >= $0.startMs && store.currentTimeMs <= $0.endMs }) {
-                            Text(currentLyric.text)
-                                .font(.system(size: store.state.typography.fontSize, weight: .bold, design: .default))
-                                .foregroundColor(Color(hex: store.state.typography.color))
-                                .shadow(color: .black.opacity(0.8), radius: store.state.typography.glow) // Black shadow looks better on lyrics for contrast
-                                .multilineTextAlignment(.center)
-                                .padding()
-                                .transition(.opacity)
-                        }
-                        Spacer()
-                    }
+                } else {
+                    Color(white: 0.1)
                 }
-                .aspectRatio(16/9, contentMode: .fit)
-                .cornerRadius(8) // Give the canvas a polished look
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
-                .padding(20) // Provide padding around the canvas so it doesn't touch the edges
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 
-                // Playback Controls Overlay (bottom left)
+                // Lyrics Overlay
                 VStack {
                     Spacer()
-                    HStack {
-                        Button(action: { store.togglePlayPause() }) {
-                            Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.title)
-                                .foregroundColor(.white)
-                        }
-                        .buttonStyle(.plain)
-                        .keyboardShortcut(.space, modifiers: [])
-                        .padding()
-                        
-                        Text(formatTimecode(ms: store.currentTimeMs))
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundColor(.white)
-                        
-                        Spacer()
+                    if let currentLyric = store.state.lyrics.first(where: { store.currentTimeMs >= $0.startMs && store.currentTimeMs <= $0.endMs }) {
+                        Text(currentLyric.text)
+                            .font(.system(size: store.state.typography.fontSize, weight: .bold, design: .default))
+                            .foregroundColor(Color(hex: store.state.typography.color))
+                            .shadow(color: .black.opacity(0.8), radius: store.state.typography.glow)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                            .transition(.opacity)
                     }
-                    .background(Color.black.opacity(0.5))
+                    Spacer()
                 }
             }
+            .aspectRatio(16/9, contentMode: .fit)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
+            .padding(16)
+            
+            // Playback Controls Overlay (bottom)
+            VStack {
+                Spacer()
+                HStack(spacing: 12) {
+                    // Play/Pause Button - BIG clickable area
+                    Button(action: { store.togglePlayPause() }) {
+                        Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Text(formatTimecode(ms: store.currentTimeMs))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    Text("/")
+                        .foregroundColor(.white.opacity(0.4))
+                    
+                    Text(formatTimecode(ms: store.effectiveDuration))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.5))
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 8)
+                .background(
+                    LinearGradient(
+                        colors: [Color.black.opacity(0.7), Color.black.opacity(0)],
+                        startPoint: .bottom,
+                        endPoint: .top
+                    )
+                    .frame(height: 80)
+                    , alignment: .bottom
+                )
+            }
+        }
+        // Click anywhere on the player to toggle play/pause
+        .contentShape(Rectangle())
+        .onTapGesture(count: 1) {
+            store.togglePlayPause()
         }
     }
     

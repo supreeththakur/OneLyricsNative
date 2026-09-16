@@ -19,6 +19,12 @@ struct OneLyricsNativeApp: App {
         .windowStyle(HiddenTitleBarWindowStyle())
         .commands {
             CommandGroup(replacing: .newItem) { }
+            CommandMenu("Playback") {
+                Button(projectStore.isPlaying ? "Pause" : "Play") {
+                    projectStore.togglePlayPause()
+                }
+                .keyboardShortcut(.space, modifiers: [])
+            }
         }
     }
 }
