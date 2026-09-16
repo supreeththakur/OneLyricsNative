@@ -49,7 +49,8 @@ struct TimelineView: View {
                         TimelineRuler(totalWidth: totalWidth, durationMs: store.effectiveDuration)
                             .frame(height: 30)
                             .background(Color(white: 0.15))
-                            .gesture(
+                            .contentShape(Rectangle())
+                            .simultaneousGesture(
                                 DragGesture(minimumDistance: 0)
                                     .onChanged { value in
                                         let percent = max(0, min(1, value.location.x / totalWidth))
