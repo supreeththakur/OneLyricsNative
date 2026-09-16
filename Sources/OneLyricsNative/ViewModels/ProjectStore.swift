@@ -7,6 +7,7 @@ class ProjectStore: ObservableObject {
     // Player State
     @Published var isPlaying: Bool = false
     @Published var currentTimeMs: Double = 0
+    @Published var timelineZoom: CGFloat = 1.0
     
     var player: AVPlayer?
     var timeObserver: Any?
@@ -27,6 +28,19 @@ class ProjectStore: ObservableObject {
     
     func removeLyric(id: UUID) {
         state.lyrics.removeAll { $0.id == id }
+    }
+    
+    func clearLyrics() {
+        state.lyrics.removeAll()
+    }
+    
+    func shiftAllLyrics(by ms: Double) {
+        state.lyrics = state.lyrics.map { lyric in
+            var updated = lyric
+            updated.startMs = max(0, updated.startMs + ms)
+            updated.endMs = max(0, updated.endMs + ms)
+            return updated
+        }
     }
     
     func togglePlayPause() {
