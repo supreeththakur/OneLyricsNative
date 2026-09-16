@@ -9,10 +9,11 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             // Main App
-            NavigationView {
-                // Sidebar (Assets)
+            HSplitView {
+                // Left Sidebar - Assets
                 AssetSidebar()
-                    .frame(minWidth: 260)
+                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 350)
+                    .background(Color(white: 0.1))
                 
                 // Main Content Area
                 VStack(spacing: 0) {
@@ -25,10 +26,12 @@ struct ContentView: View {
                     TimelineView()
                         .frame(height: 260)
                 }
+                .frame(minWidth: 400, maxWidth: .infinity)
                 
                 // Inspector (Settings)
                 InspectorSidebar()
-                    .frame(minWidth: 280)
+                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 350)
+                    .background(Color(white: 0.1))
             }
             .toolbar {
                 ToolbarItem(placement: .navigation) {

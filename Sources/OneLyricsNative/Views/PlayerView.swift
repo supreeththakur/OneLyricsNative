@@ -13,9 +13,11 @@ struct PlayerView: View {
                 ZStack {
                     if let bg = store.state.backgroundURL {
                         if bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov" {
-                            VideoPlayer(player: AVPlayer(url: bg))
-                                .disabled(true)
-                                .opacity(0.8)
+                            if let bgPlayer = store.bgPlayer {
+                                VideoPlayer(player: bgPlayer)
+                                    .disabled(true)
+                                    .opacity(0.8)
+                            }
                         } else if let nsImage = NSImage(contentsOf: bg) {
                             Image(nsImage: nsImage)
                                 .resizable()
@@ -35,7 +37,7 @@ struct PlayerView: View {
                             Text(currentLyric.text)
                                 .font(.system(size: store.state.typography.fontSize, weight: .bold, design: .default))
                                 .foregroundColor(Color(hex: store.state.typography.color))
-                                .shadow(color: .white, radius: store.state.typography.glow)
+                                .shadow(color: .black.opacity(0.8), radius: store.state.typography.glow) // Black shadow looks better on lyrics for contrast
                                 .multilineTextAlignment(.center)
                                 .padding()
                                 .transition(.opacity)
@@ -44,7 +46,14 @@ struct PlayerView: View {
                     }
                 }
                 .aspectRatio(16/9, contentMode: .fit)
-                .frame(width: geo.size.width, height: geo.size.height)
+                .cornerRadius(8) // Give the canvas a polished look
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
+                .padding(20) // Provide padding around the canvas so it doesn't touch the edges
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 
                 // Playback Controls Overlay (bottom left)
                 VStack {

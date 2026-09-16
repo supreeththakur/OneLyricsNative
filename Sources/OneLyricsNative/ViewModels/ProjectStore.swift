@@ -10,6 +10,7 @@ class ProjectStore: ObservableObject {
     @Published var timelineZoom: CGFloat = 1.0
     
     var player: AVPlayer?
+    var bgPlayer: AVPlayer? // Player for video backgrounds
     var timeObserver: Any?
     
     // Fallback duration if audio is not loaded or NaN
@@ -28,6 +29,15 @@ class ProjectStore: ObservableObject {
     
     func setBackground(url: URL) {
         state.backgroundURL = url
+        if url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov" {
+            bgPlayer = AVPlayer(url: url)
+            // If main audio hasn't been imported, the video acts as the main duration source
+            if player == nil {
+                setupPlayer(url: url)
+            }
+        } else {
+            bgPlayer = nil
+        }
     }
     
     func addLyric(_ lyric: LyricBlock) {
@@ -53,19 +63,21 @@ class ProjectStore: ObservableObject {
     }
     
     func togglePlayPause() {
-        guard let player = player else { return }
         if isPlaying {
-            player.pause()
+            player?.pause()
+            bgPlayer?.pause()
         } else {
-            player.play()
+            player?.play()
+            bgPlayer?.play()
         }
         isPlaying.toggle()
     }
     
     func seek(to ms: Double) {
-        guard let player = player else { return }
-        let time = CMTime(seconds: ms / 1000.0, preferredTimescale: 1000)
-        player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+        guard effectiveDuration > 0 else { return }
+        let cmTime = CMTime(seconds: ms / 1000.0, preferredTimescale: 1000)
+        player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        bgPlayer?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
         currentTimeMs = ms
     }
     
