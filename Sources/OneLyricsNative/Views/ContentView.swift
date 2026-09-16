@@ -67,22 +67,6 @@ struct ContentView: View {
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
         }
-        .onAppear {
-            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                if event.keyCode == 49 { // Spacebar
-                    // Check if user is typing in a text field
-                    if let firstResponder = NSApp.keyWindow?.firstResponder {
-                        let className = String(describing: type(of: firstResponder))
-                        if className.contains("NSText") || className.contains("Field") {
-                            return event
-                        }
-                    }
-                    store.togglePlayPause()
-                    return nil // swallow event
-                }
-                return event
-            }
-        }
     }
 }
 

@@ -71,6 +71,7 @@ struct PlayerView: View {
                                 .foregroundColor(.white)
                         }
                         .buttonStyle(.plain)
+                        .keyboardShortcut(.space, modifiers: [])
                         .padding()
                         
                         Text(formatTimecode(ms: store.currentTimeMs))

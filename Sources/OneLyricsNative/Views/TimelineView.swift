@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TimelineView: View {
     @EnvironmentObject var store: ProjectStore
+    @State private var scrubbingPosition: Double? = nil
     
     var body: some View {
         GeometryReader { geo in
@@ -54,7 +55,16 @@ struct TimelineView: View {
                                 DragGesture(minimumDistance: 0)
                                     .onChanged { value in
                                         let percent = max(0, min(1, value.location.x / totalWidth))
-                                        store.seek(to: percent * store.effectiveDuration)
+                                        let ms = percent * store.effectiveDuration
+                                        scrubbingPosition = ms
+                                        // Throttle or just seek
+                                        store.seek(to: ms)
+                                    }
+                                    .onEnded { value in
+                                        let percent = max(0, min(1, value.location.x / totalWidth))
+                                        let ms = percent * store.effectiveDuration
+                                        scrubbingPosition = nil
+                                        store.seek(to: ms)
                                     }
                             )
                         
@@ -66,7 +76,8 @@ struct TimelineView: View {
                                 .frame(width: totalWidth, height: 180)
                             
                             // Playhead
-                            let playheadX = store.effectiveDuration > 0 ? (store.currentTimeMs / store.effectiveDuration) * totalWidth : 0
+                            let activeTime = scrubbingPosition ?? store.currentTimeMs
+                            let playheadX = store.effectiveDuration > 0 ? (activeTime / store.effectiveDuration) * totalWidth : 0
                             
                             Rectangle()
                                 .fill(Color.red)
