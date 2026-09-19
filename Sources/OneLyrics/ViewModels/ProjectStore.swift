@@ -10,6 +10,10 @@ class ProjectStore: ObservableObject {
     @Published var timelineZoom: CGFloat = 1.0
     @Published var isConvertingAudio: Bool = false
     
+    // New states for Timeline Tracks
+    @Published var waveformData: [Float] = []
+    @Published var thumbnails: [(time: Double, image: NSImage)] = []
+    
     var player: AVPlayer?
     var bgPlayer: AVPlayer? // Player for video backgrounds
     var timeObserver: Any?
@@ -31,6 +35,14 @@ class ProjectStore: ObservableObject {
     func setAudio(url: URL) {
         state.audioURL = url
         setupPlayer(url: url)
+        
+        // Generate waveform
+        Task {
+            let data = await WaveformGenerator.generateWaveform(for: url)
+            DispatchQueue.main.async {
+                self.waveformData = data
+            }
+        }
     }
     
     func importAndConvertAudio(url: URL) {
@@ -60,9 +72,21 @@ class ProjectStore: ObservableObject {
     
     func setBackground(url: URL) {
         state.backgroundURL = url
-        if url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov" {
+        let ext = url.pathExtension.lowercased()
+        let isVideo = ["mp4", "mov", "m4v"].contains(ext)
+        let isImage = ["jpg", "jpeg", "png", "webp", "tiff", "heic"].contains(ext)
+        
+        if isVideo {
             let item = AVPlayerItem(url: url)
             let bp = AVPlayer(playerItem: item)
+            
+            // Generate thumbnails
+            Task {
+                let thumbs = await ThumbnailGenerator.generateThumbnails(for: url)
+                DispatchQueue.main.async {
+                    self.thumbnails = thumbs
+                }
+            }
             bp.actionAtItemEnd = .none
             bgPlayer = bp
             
@@ -83,8 +107,20 @@ class ProjectStore: ObservableObject {
             if player == nil {
                 setupPlayer(url: url)
             }
+        } else if isImage {
+            bgPlayer = nil
+            if let obs = bgEndObserver {
+                NotificationCenter.default.removeObserver(obs)
+                bgEndObserver = nil
+            }
+            if let img = NSImage(contentsOf: url) {
+                self.thumbnails = [(time: 0, image: img)]
+            } else {
+                self.thumbnails = []
+            }
         } else {
             bgPlayer = nil
+            thumbnails = [] // Clear thumbnails if not video or image
             if let obs = bgEndObserver {
                 NotificationCenter.default.removeObserver(obs)
                 bgEndObserver = nil
@@ -187,6 +223,7 @@ class ProjectStore: ObservableObject {
         let asset = AVURLAsset(url: url)
         let item = AVPlayerItem(asset: asset)
         let p = AVPlayer(playerItem: item)
+        p.volume = state.mediaConfig.volume
         player = p
         
         // When song ends, stop playback cleanly and set position to end

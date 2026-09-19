@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import AppKit
 import CoreGraphics
+import CoreImage
 import SwiftUI
 
 class VideoExporter: ObservableObject {
@@ -138,7 +139,7 @@ class VideoExporter: ObservableObject {
                 // 2. Audio Setup (Read from audio source, encode to AAC directly into output file)
                 var audioInput: AVAssetWriterInput? = nil
                 var audioReader: AVAssetReader? = nil
-                var audioOutput: AVAssetReaderTrackOutput? = nil
+                var audioOutput: AVAssetReaderOutput? = nil
                 
                 if let audioURL = resolvedAudioURL {
                     let audioAsset = AVURLAsset(url: audioURL)
@@ -165,7 +166,14 @@ class VideoExporter: ObservableObject {
                                     AVLinearPCMIsBigEndianKey: false,
                                     AVLinearPCMIsNonInterleaved: false
                                 ]
-                                let aOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: pcmSettings)
+                                let aOutput = AVAssetReaderAudioMixOutput(audioTracks: [audioTrack], audioSettings: pcmSettings)
+                                
+                                let audioMix = AVMutableAudioMix()
+                                let mixParams = AVMutableAudioMixInputParameters(track: audioTrack)
+                                mixParams.setVolume(store.state.mediaConfig.volume, at: .zero)
+                                audioMix.inputParameters = [mixParams]
+                                aOutput.audioMix = audioMix
+                                
                                 if reader.canAdd(aOutput) {
                                     reader.add(aOutput)
                                     audioReader = reader
@@ -208,6 +216,8 @@ class VideoExporter: ObservableObject {
                     .union(.byteOrder32Little)
                 
                 var lastRenderedBgFrame: CGImage? = bgCGImage
+                let ciContext = CIContext(options: [CIContextOption.useSoftwareRenderer: false])
+                let mediaConfig = store.state.mediaConfig
                 
                 // Render all video frames
                 for frameIndex in 0..<totalFrames {
@@ -271,55 +281,206 @@ class VideoExporter: ObservableObject {
                     }
                     
                     if let cgImage = lastRenderedBgFrame {
-                        let imgW = CGFloat(cgImage.width)
-                        let imgH = CGFloat(cgImage.height)
+                        var finalCGImage = cgImage
+                        
+                        if mediaConfig.brightness != 0 || mediaConfig.contrast != 1.0 || mediaConfig.saturation != 1.0 {
+                            let ciImage = CIImage(cgImage: cgImage)
+                            var processedCI = ciImage
+                            
+                            if let filter = CIFilter(name: "CIColorControls") {
+                                filter.setValue(processedCI, forKey: kCIInputImageKey)
+                                filter.setValue(CGFloat(mediaConfig.brightness), forKey: kCIInputBrightnessKey)
+                                filter.setValue(CGFloat(mediaConfig.contrast), forKey: kCIInputContrastKey)
+                                filter.setValue(CGFloat(mediaConfig.saturation), forKey: kCIInputSaturationKey)
+                                if let output = filter.outputImage {
+                                    processedCI = output
+                                }
+                            }
+                            
+                            if let rendered = ciContext.createCGImage(processedCI, from: processedCI.extent) {
+                                finalCGImage = rendered
+                            }
+                        }
+                        
+                        let imgW = CGFloat(finalCGImage.width)
+                        let imgH = CGFloat(finalCGImage.height)
                         let canvasW = CGFloat(width)
                         let canvasH = CGFloat(height)
-                        let scale = max(canvasW / imgW, canvasH / imgH)
+                        
+                        // Apply cropScale
+                        let baseScale = max(canvasW / imgW, canvasH / imgH)
+                        let scale = baseScale * CGFloat(mediaConfig.cropScale)
+                        
                         let drawW = imgW * scale
                         let drawH = imgH * scale
                         let drawX = (canvasW - drawW) / 2
                         let drawY = (canvasH - drawH) / 2
-                        context.draw(cgImage, in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
+                        context.draw(finalCGImage, in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
                     }
                     
                     // 3. Lyrics text overlay
                     if let currentLyric = lyrics.first(where: { currentMs >= $0.startMs && currentMs <= $0.endMs }) {
-                        let text = currentLyric.text as NSString
                         let fontSize = typography.fontSize * CGFloat(width) / 1920.0
                         
-                        let paragraphStyle = NSMutableParagraphStyle()
-                        paragraphStyle.alignment = .center
+                        let anim = typography.animationStyle
+                        let t = currentMs
+                        let start = currentLyric.startMs
+                        let end = currentLyric.endMs
                         
-                        let nsColor = NSColor(red: textR, green: textG, blue: textB, alpha: 1.0)
+                        let duration = 300.0
+                        let progressIn = max(0, min(1, (t - start) / duration))
+                        let progressOut = max(0, min(1, (end - t) / duration))
+                        
+                        let opacity: CGFloat = {
+                            if anim == .none { return 1.0 }
+                            return CGFloat(min(progressIn, progressOut))
+                        }()
+                        
+                        let scale: CGFloat = {
+                            if anim == .pop {
+                                let p = progressIn
+                                return p < 1 ? CGFloat(0.8 + (p * 0.2)) : 1.0
+                            } else if anim == .scaleDown {
+                                let totalProgress = max(0, min(1, (t - start) / max(1, end - start)))
+                                return CGFloat(1.05 - (totalProgress * 0.05))
+                            } else if anim == .scaleUp {
+                                let totalProgress = max(0, min(1, (t - start) / max(1, end - start)))
+                                return CGFloat(0.95 + (totalProgress * 0.05))
+                            }
+                            return 1.0
+                        }()
+                        
+                        let blurRadius: CGFloat = {
+                            if anim == .blurFade {
+                                return CGFloat((1.0 - min(progressIn, progressOut)) * 5.0)
+                            }
+                            return 0
+                        }()
+                        
+                        let textAlpha: CGFloat = {
+                            if anim == .blurFade {
+                                let blurProgress = CGFloat(1.0 - min(progressIn, progressOut))
+                                return opacity * max(0, (1.0 - blurProgress * 1.5))
+                            }
+                            return opacity
+                        }()
+                        
+                        let yOffset: CGFloat = {
+                            if anim == .slideUp {
+                                return CGFloat((1.0 - progressIn) * 50.0 - (1.0 - progressOut) * 50.0)
+                            } else if anim == .float {
+                                let totalProgress = max(0, min(1, (t - start) / max(1, end - start)))
+                                return CGFloat(15.0 - (totalProgress * 30.0))
+                            } else if anim == .driftUp {
+                                let totalProgress = max(0, min(1, (t - start) / max(1, end - start)))
+                                return CGFloat(5.0 - (totalProgress * 10.0))
+                            }
+                            return 0
+                        }()
+                        
+                        let xOffset: CGFloat = {
+                            if anim == .gentleSlide {
+                                let totalProgress = max(0, min(1, (t - start) / max(1, end - start)))
+                                return CGFloat(-10.0 + (totalProgress * 20.0))
+                            }
+                            return 0
+                        }()
+                        
+                        let displayText: NSString = {
+                            let txt = currentLyric.text
+                            if anim == .typewriter {
+                                let totalDuration = end - start
+                                let revealDuration = min(totalDuration * 0.5, 1500)
+                                let progress = max(0, min(1, (t - start) / revealDuration))
+                                let charCount = Int(progress * Double(txt.count))
+                                return String(txt.prefix(charCount)) as NSString
+                            }
+                            return txt as NSString
+                        }()
+                        
+                        let isLeading = typography.alignment == .bottomLeading
+                        
+                        let paragraphStyle = NSMutableParagraphStyle()
+                        paragraphStyle.alignment = isLeading ? .left : .center
+                        
+                        let nsColor = NSColor(red: textR, green: textG, blue: textB, alpha: textAlpha)
                         
                         let shadow = NSShadow()
-                        shadow.shadowColor = NSColor.black.withAlphaComponent(0.9)
-                        shadow.shadowBlurRadius = typography.glow * CGFloat(width) / 1920.0
-                        shadow.shadowOffset = NSSize(width: 0, height: -2)
+                        if anim == .blurFade && blurRadius > 0 {
+                            let blurProgress = CGFloat(1.0 - min(progressIn, progressOut))
+                            shadow.shadowColor = NSColor(red: textR, green: textG, blue: textB, alpha: opacity * blurProgress)
+                            shadow.shadowBlurRadius = (typography.glow * CGFloat(width) / 1920.0) + blurRadius
+                        } else if typography.glow > 0 {
+                            shadow.shadowColor = NSColor.black.withAlphaComponent(0.9 * opacity)
+                            shadow.shadowBlurRadius = typography.glow * CGFloat(width) / 1920.0
+                            shadow.shadowOffset = NSSize(width: 0, height: -2)
+                        }
                         
-                        let attrs: [NSAttributedString.Key: Any] = [
-                            .font: NSFont.boldSystemFont(ofSize: fontSize),
+                        let font = NSFont(name: typography.fontFamily, size: fontSize) ?? NSFont.boldSystemFont(ofSize: fontSize)
+                        
+                        var attrs: [NSAttributedString.Key: Any] = [
+                            .font: font,
                             .foregroundColor: nsColor,
-                            .paragraphStyle: paragraphStyle,
-                            .shadow: shadow
+                            .paragraphStyle: paragraphStyle
                         ]
                         
-                        let textSize = text.size(withAttributes: attrs)
-                        let textX = (CGFloat(width) - textSize.width) / 2
-                        let textY = CGFloat(height) / 2 - textSize.height / 2
+                        if typography.glow > 0 || anim == .blurFade {
+                            attrs[.shadow] = shadow
+                        }
+                        
+                        let textSize = displayText.size(withAttributes: attrs)
+                        
+
+                        
+                        let textX: CGFloat
+                        switch typography.alignment {
+                        case .center: textX = CGFloat(width) / 2.0 - textSize.width / 2.0 + xOffset
+                        case .bottomLeading: textX = 80.0 * (CGFloat(width)/1920.0) + xOffset
+                        default: textX = CGFloat(width) / 2.0 - textSize.width / 2.0 + xOffset
+                        }
+                        
+                        let textY: CGFloat
+                        switch typography.alignment {
+                        case .center: textY = CGFloat(height) / 2.0 - textSize.height / 2.0 + yOffset
+                        case .bottomLeading: textY = CGFloat(height) - 100.0 * (CGFloat(height)/1080.0) - textSize.height + yOffset
+                        case .bottom: textY = CGFloat(height) - 100.0 * (CGFloat(height)/1080.0) - textSize.height + yOffset
+                        case .top: textY = 100.0 * (CGFloat(height)/1080.0) + yOffset
+                        }
+                        
+                        let textRect = NSRect(x: textX, y: textY, width: CGFloat(width), height: textSize.height)
                         
                         // Flip coordinates for text drawing in CoreGraphics
                         context.saveGState()
                         context.translateBy(x: 0, y: CGFloat(height))
                         context.scaleBy(x: 1, y: -1)
                         
+                        // Apply Scale transform around center of text
+                        let centerX = textX + textSize.width / 2
+                        let centerY = textY + textSize.height / 2
+                        context.translateBy(x: centerX, y: centerY)
+                        context.scaleBy(x: scale, y: scale)
+                        context.translateBy(x: -centerX, y: -centerY)
+                        
                         NSGraphicsContext.saveGraphicsState()
                         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-                        text.draw(
-                            in: CGRect(x: textX, y: textY, width: textSize.width + 20, height: textSize.height + 10),
-                            withAttributes: attrs
-                        )
+                        let drawRect = CGRect(x: textX, y: textY, width: textSize.width + 100, height: textSize.height + 50)
+                        
+                        if typography.hasStroke && typography.strokeWidth > 0 {
+                            var strokeAttrs = attrs
+                            let hexStroke = typography.strokeColor.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+                            var sRgb: UInt64 = 0x000000
+                            Scanner(string: hexStroke).scanHexInt64(&sRgb)
+                            let sR = CGFloat((sRgb >> 16) & 0xFF) / 255.0
+                            let sG = CGFloat((sRgb >> 8) & 0xFF) / 255.0
+                            let sB = CGFloat(sRgb & 0xFF) / 255.0
+                            
+                            strokeAttrs[.strokeColor] = NSColor(red: sR, green: sG, blue: sB, alpha: textAlpha)
+                            strokeAttrs[.strokeWidth] = typography.strokeWidth * 2.0
+                            
+                            displayText.draw(in: drawRect, withAttributes: strokeAttrs)
+                        }
+                        
+                        displayText.draw(in: drawRect, withAttributes: attrs)
                         NSGraphicsContext.restoreGraphicsState()
                         context.restoreGState()
                     }

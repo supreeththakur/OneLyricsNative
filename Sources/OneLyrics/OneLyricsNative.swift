@@ -7,6 +7,9 @@ struct OneLyricsNativeApp: App {
     @StateObject private var projectStore = ProjectStore()
     
     init() {
+        // Register locally downloaded fonts dynamically on app launch
+        FontManager.shared.loadLocalFonts()
+        
         // Global spacebar monitor - runs at app level, always works
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 49 { // 49 = Spacebar

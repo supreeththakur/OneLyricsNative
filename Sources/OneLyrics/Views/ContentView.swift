@@ -10,11 +10,10 @@ struct ContentView: View {
         ZStack {
             // Main App
             HSplitView {
-                // Left Sidebar - Assets
+                // Left Sidebar (Assets)
                 AssetSidebar()
-                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 350)
-                    .background(Color(white: 0.1))
-                
+                    .frame(width: 260)
+                    
                 // Main Content Area
                 VStack(spacing: 0) {
                     // Player View

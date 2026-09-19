@@ -120,7 +120,6 @@ struct AssetSidebar: View {
                     .buttonStyle(.plain)
                 }
                 
-                // Global Sync Shift
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Global Sync Shift").font(.caption).foregroundColor(.gray)
@@ -129,19 +128,19 @@ struct AssetSidebar: View {
                     }
                     
                     HStack(spacing: 8) {
-                        ShiftButton(label: "-500", action: { store.shiftAllLyrics(by: -500) })
-                        ShiftButton(label: "-100", action: { store.shiftAllLyrics(by: -100) })
-                        ShiftButton(label: "+100", action: { store.shiftAllLyrics(by: 100) })
-                        ShiftButton(label: "+500", action: { store.shiftAllLyrics(by: 500) })
+                        ShiftButton(label: "-.5s") { store.shiftAllLyrics(by: -500) }
+                        ShiftButton(label: "-.1s") { store.shiftAllLyrics(by: -100) }
+                        ShiftButton(label: "+.1s") { store.shiftAllLyrics(by: 100) }
+                        ShiftButton(label: "+.5s") { store.shiftAllLyrics(by: 500) }
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, 4)
             }
             
             Spacer()
         }
         .padding(20)
-        .background(Color(red: 0.07, green: 0.07, blue: 0.08)) // Sleek dark sidebar
+        .background(Color(red: 0.07, green: 0.07, blue: 0.08))
     }
     
     private func importAudio() {
@@ -218,49 +217,251 @@ struct ShiftButton: View {
     }
 }
 
+enum InspectorTab: String, CaseIterable {
+    case text = "Text"
+    case bg = "BG"
+    case audio = "Audio"
+}
+
 struct InspectorSidebar: View {
     @EnvironmentObject var store: ProjectStore
+    @ObservedObject var fontManager = FontManager.shared
+    @State private var showFontManager = false
+    @State private var showTemplateManager = false
+    @State private var showingSaveTemplateAlert = false
+    @State private var newTemplateName = ""
+    
+    @State private var selectedTab: InspectorTab = .text
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Text("INSPECTOR")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(.gray)
-                .tracking(1.5)
-                .padding(.top, 10)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Template").font(.subheadline).foregroundColor(.gray)
-                Picker("", selection: $store.state.templateId) {
-                    Text("Clean Music Channel").tag("CleanMusicChannel")
-                    Text("Cinematic").tag("Cinematic")
-                    Text("Neon").tag("Neon")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("INSPECTOR")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.gray)
+                    .tracking(1.5)
+                    .padding(.top, 10)
+                
+                Picker("", selection: $selectedTab) {
+                    ForEach(InspectorTab.allCases, id: \.self) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
                 }
+                .pickerStyle(.segmented)
                 .labelsHidden()
-                .pickerStyle(.menu)
-            }
-            
-            Divider().background(Color.white.opacity(0.1))
-            
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Typography").font(.subheadline).foregroundColor(.gray)
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Font Size: \(Int(store.state.typography.fontSize))px").font(.caption).foregroundColor(.gray)
-                    Slider(value: $store.state.typography.fontSize, in: 40...400)
-                        .tint(.purple)
+                if selectedTab == .audio {
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Volume: \(Int(store.state.mediaConfig.volume * 100))%").font(.caption2).foregroundColor(.gray)
+                            Slider(value: Binding(
+                                get: { Double(store.state.mediaConfig.volume) },
+                                set: { store.state.mediaConfig.volume = Float($0) }
+                            ), in: 0.0...2.0)
+                            .tint(.purple)
+                        }
+                    }
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Glow Intensity: \(Int(store.state.typography.glow))px").font(.caption).foregroundColor(.gray)
-                    Slider(value: $store.state.typography.glow, in: 0...100)
-                        .tint(.purple)
+                if selectedTab == .bg {
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Scale (Crop): \(String(format: "%.2f", store.state.mediaConfig.cropScale))x").font(.caption2).foregroundColor(.gray)
+                            Slider(value: $store.state.mediaConfig.cropScale, in: 0.5...3.0)
+                                .tint(.blue)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Brightness: \(String(format: "%.2f", store.state.mediaConfig.brightness))").font(.caption2).foregroundColor(.gray)
+                            Slider(value: $store.state.mediaConfig.brightness, in: -1.0...1.0)
+                                .tint(.blue)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Contrast: \(String(format: "%.2f", store.state.mediaConfig.contrast))").font(.caption2).foregroundColor(.gray)
+                            Slider(value: $store.state.mediaConfig.contrast, in: 0.0...3.0)
+                                .tint(.blue)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Saturation: \(String(format: "%.2f", store.state.mediaConfig.saturation))").font(.caption2).foregroundColor(.gray)
+                            Slider(value: $store.state.mediaConfig.saturation, in: 0.0...3.0)
+                                .tint(.blue)
+                        }
+                    }
                 }
+                
+                if selectedTab == .text {
+                    VStack(alignment: .leading, spacing: 16) {
+                        
+                        // 2. Templates
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("Template").font(.caption).foregroundColor(.gray)
+                                Spacer()
+                                Button("Manage") { showTemplateManager = true }
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.blue)
+                                    .buttonStyle(.plain)
+                                Button("Save As...") { 
+                                    newTemplateName = ""
+                                    showingSaveTemplateAlert = true
+                                }
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.purple)
+                                    .buttonStyle(.plain)
+                            }
+                            Picker("", selection: Binding(
+                                get: { store.state.templateId },
+                                set: { newId in 
+                                    store.state.templateId = newId
+                                    TemplateManager.applyTemplate(newId, to: &store.state.typography)
+                                }
+                            )) {
+                                ForEach(TemplateManager.templates, id: \.self) { t in
+                                    Text(t).tag(t)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                        }
+                        
+                        Divider().background(Color.white.opacity(0.05)).padding(.vertical, 4)
+                        
+                        // 3. Typography
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Typography Style").font(.caption).foregroundColor(.gray)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("Font Family").font(.caption2).foregroundColor(.gray)
+                                    Spacer()
+                                    Button("Manage Fonts") { showFontManager = true }
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.blue)
+                                        .buttonStyle(.plain)
+                                }
+                                Picker("", selection: $store.state.typography.fontFamily) {
+                                    ForEach(fontManager.availableFonts, id: \.self) { fontName in
+                                        Text(fontName).tag(fontName)
+                                    }
+                                }
+                                .labelsHidden()
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Alignment").font(.caption2).foregroundColor(.gray)
+                                Picker("", selection: $store.state.typography.alignment) {
+                                    ForEach(TextAlignmentStyle.allCases, id: \.self) { alignment in
+                                        Text(alignment.rawValue).tag(alignment)
+                                    }
+                                }
+                                .labelsHidden()
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Animation").font(.caption2).foregroundColor(.gray)
+                                Picker("", selection: $store.state.typography.animationStyle) {
+                                    ForEach(AnimationStyle.allCases, id: \.self) { anim in
+                                        Text(anim.rawValue).tag(anim)
+                                    }
+                                }
+                                .labelsHidden()
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Color").font(.caption2).foregroundColor(.gray)
+                                ColorPicker("", selection: Binding(
+                                    get: { Color(hex: store.state.typography.color) },
+                                    set: { newColor in 
+                                        if let hex = newColor.toHex() {
+                                            store.state.typography.color = "#\(hex)"
+                                        }
+                                    }
+                                ))
+                                .labelsHidden()
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Font Size: \(Int(store.state.typography.fontSize))px").font(.caption2).foregroundColor(.gray)
+                                Slider(value: $store.state.typography.fontSize, in: 40...400)
+                                    .tint(.purple)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Glow Intensity: \(Int(store.state.typography.glow))px").font(.caption2).foregroundColor(.gray)
+                                Slider(value: $store.state.typography.glow, in: 0...100)
+                                    .tint(.purple)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Toggle("Enable Stroke", isOn: $store.state.typography.hasStroke)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .tint(.purple)
+                            }
+                            
+                            if store.state.typography.hasStroke {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Stroke Color").font(.caption2).foregroundColor(.gray)
+                                    ColorPicker("", selection: Binding(
+                                        get: { Color(hex: store.state.typography.strokeColor) },
+                                        set: { newColor in 
+                                            if let hex = newColor.toHex() {
+                                                store.state.typography.strokeColor = "#\(hex)"
+                                            }
+                                        }
+                                    ))
+                                    .labelsHidden()
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Stroke Width: \(String(format: "%.1f", store.state.typography.strokeWidth))px").font(.caption2).foregroundColor(.gray)
+                                    Slider(value: $store.state.typography.strokeWidth, in: 0.5...15.0)
+                                        .tint(.purple)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Spacer()
             }
-            
-            Spacer()
+            .padding(20)
         }
-        .padding(20)
         .background(Color(red: 0.07, green: 0.07, blue: 0.08))
+        .popover(isPresented: $showTemplateManager) {
+            TemplateManagerView()
+        }
+        .popover(isPresented: $showFontManager) {
+            FontManagerView()
+        }
+        .alert("Save Custom Template", isPresented: $showingSaveTemplateAlert) {
+            TextField("Template Name", text: $newTemplateName)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") {
+                let name = newTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty {
+                    TemplateManager.saveTemplate(name: name, config: store.state.typography)
+                    store.state.templateId = name // Switch to it
+                }
+            }
+        } message: {
+            Text("Enter a name for your custom typography template.")
+        }
+    }
+}
+
+extension Color {
+    func toHex() -> String? {
+        let nsColor = NSColor(self)
+        // Convert to sRGB to ensure we have RGB components (macOS color picker can return CMYK, Gray, etc.)
+        guard let converted = nsColor.usingColorSpace(.sRGB) else { return nil }
+        
+        let r = Int(max(0, min(1, converted.redComponent)) * 255)
+        let g = Int(max(0, min(1, converted.greenComponent)) * 255)
+        let b = Int(max(0, min(1, converted.blueComponent)) * 255)
+        
+        return String(format: "%02X%02X%02X", r, g, b)
     }
 }
