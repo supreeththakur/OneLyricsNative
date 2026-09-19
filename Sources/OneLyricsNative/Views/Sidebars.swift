@@ -23,7 +23,15 @@ struct AssetSidebar: View {
                             .background(store.state.audioURL != nil ? Color.green.opacity(0.05) : Color.white.opacity(0.02))
                             .cornerRadius(12)
                         
-                        if store.state.audioURL != nil {
+                        if store.isConvertingAudio {
+                            VStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Converting to M4A...")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                        } else if store.state.audioURL != nil {
                             VStack(spacing: 8) {
                                 Image(systemName: "music.note")
                                     .font(.title2)
@@ -46,6 +54,7 @@ struct AssetSidebar: View {
                     .frame(height: 80)
                 }
                 .buttonStyle(.plain)
+                .disabled(store.isConvertingAudio)
             }
             
             // Background Section
@@ -140,7 +149,7 @@ struct AssetSidebar: View {
         panel.allowedContentTypes = [.audio]
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
-            store.setAudio(url: url)
+            store.importAndConvertAudio(url: url)
         }
     }
     
@@ -238,13 +247,13 @@ struct InspectorSidebar: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Font Size: \(Int(store.state.typography.fontSize))px").font(.caption).foregroundColor(.gray)
-                    Slider(value: $store.state.typography.fontSize, in: 24...120)
+                    Slider(value: $store.state.typography.fontSize, in: 40...400)
                         .tint(.purple)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Glow Intensity: \(Int(store.state.typography.glow))px").font(.caption).foregroundColor(.gray)
-                    Slider(value: $store.state.typography.glow, in: 0...30)
+                    Slider(value: $store.state.typography.glow, in: 0...100)
                         .tint(.purple)
                 }
             }

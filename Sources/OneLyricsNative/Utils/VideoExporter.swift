@@ -180,6 +180,27 @@ class VideoExporter: ObservableObject {
                 writer.startSession(atSourceTime: .zero)
                 audioReader?.startReading()
                 
+                // 3. Start Audio Appending concurrently
+                if let aInput = audioInput, let aOutput = audioOutput {
+                    let audioQueue = DispatchQueue(label: "audioWriterQueue")
+                    let maxDurationSec = durationMs / 1000.0
+                    aInput.requestMediaDataWhenReady(on: audioQueue) {
+                        while aInput.isReadyForMoreMediaData {
+                            if let sbuf = aOutput.copyNextSampleBuffer() {
+                                let pts = CMSampleBufferGetPresentationTimeStamp(sbuf)
+                                if CMTimeGetSeconds(pts) >= maxDurationSec {
+                                    aInput.markAsFinished()
+                                    break
+                                }
+                                aInput.append(sbuf)
+                            } else {
+                                aInput.markAsFinished()
+                                break
+                            }
+                        }
+                    }
+                }
+                
                 // Color configuration: sRGB color space + Little-Endian PremultipliedFirst
                 // This ensures kCVPixelFormatType_32BGRA bytes in memory are [B, G, R, A] matching little-endian ARGB
                 let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
@@ -192,8 +213,10 @@ class VideoExporter: ObservableObject {
                 for frameIndex in 0..<totalFrames {
                     // Wait for input to be ready
                     while !videoInput.isReadyForMoreMediaData {
+                        if writer.status != .writing { break }
                         Thread.sleep(forTimeInterval: 0.005)
                     }
+                    if writer.status != .writing { break }
                     
                     let currentMs = Double(frameIndex) / Double(fps) * 1000.0
                     
@@ -272,7 +295,7 @@ class VideoExporter: ObservableObject {
                         
                         let shadow = NSShadow()
                         shadow.shadowColor = NSColor.black.withAlphaComponent(0.9)
-                        shadow.shadowBlurRadius = typography.glow
+                        shadow.shadowBlurRadius = typography.glow * CGFloat(width) / 1920.0
                         shadow.shadowOffset = NSSize(width: 0, height: -2)
                         
                         let attrs: [NSAttributedString.Key: Any] = [
@@ -318,23 +341,6 @@ class VideoExporter: ObservableObject {
                 }
                 
                 videoInput.markAsFinished()
-                
-                // Write audio samples directly to file
-                if let aInput = audioInput, let aOutput = audioOutput {
-                    let maxDurationSec = durationMs / 1000.0
-                    while aInput.isReadyForMoreMediaData {
-                        if let sbuf = aOutput.copyNextSampleBuffer() {
-                            let pts = CMSampleBufferGetPresentationTimeStamp(sbuf)
-                            if CMTimeGetSeconds(pts) >= maxDurationSec {
-                                break
-                            }
-                            aInput.append(sbuf)
-                        } else {
-                            break
-                        }
-                    }
-                    aInput.markAsFinished()
-                }
                 
                 // Finish writing everything
                 let semaphore = DispatchSemaphore(value: 0)

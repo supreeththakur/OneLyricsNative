@@ -8,6 +8,7 @@ class ProjectStore: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var currentTimeMs: Double = 0
     @Published var timelineZoom: CGFloat = 1.0
+    @Published var isConvertingAudio: Bool = false
     
     var player: AVPlayer?
     var bgPlayer: AVPlayer? // Player for video backgrounds
@@ -16,7 +17,7 @@ class ProjectStore: ObservableObject {
     var playerEndObserver: Any?
     
     private var isSeeking: Bool = false
-    private var pendingSeekMs: Double? = nil
+    private var pendingSeek: (ms: Double, isScrubbing: Bool)? = nil
     
     // Fallback duration if audio is not loaded or NaN
     var effectiveDuration: Double {
@@ -30,6 +31,31 @@ class ProjectStore: ObservableObject {
     func setAudio(url: URL) {
         state.audioURL = url
         setupPlayer(url: url)
+    }
+    
+    func importAndConvertAudio(url: URL) {
+        let ext = url.pathExtension.lowercased()
+        if ext == "m4a" || ext == "wav" || ext == "aiff" {
+            setAudio(url: url)
+            return
+        }
+        
+        isConvertingAudio = true
+        Task {
+            do {
+                let convertedUrl = try await AudioConverter.convertToM4A(sourceURL: url)
+                DispatchQueue.main.async {
+                    self.setAudio(url: convertedUrl)
+                    self.isConvertingAudio = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    print("Conversion failed: \(error)")
+                    self.isConvertingAudio = false
+                    self.setAudio(url: url) // Fallback to original
+                }
+            }
+        }
     }
     
     func setBackground(url: URL) {
@@ -112,7 +138,7 @@ class ProjectStore: ObservableObject {
         
         // Prevent queuing dozens of concurrent seeks that stall AVPlayer
         if isSeeking {
-            pendingSeekMs = boundedMs
+            pendingSeek = (ms: boundedMs, isScrubbing: isScrubbing)
             return
         }
         
@@ -137,9 +163,9 @@ class ProjectStore: ObservableObject {
                 DispatchQueue.main.async {
                     guard let self = self else { return }
                     self.isSeeking = false
-                    if let pending = self.pendingSeekMs {
-                        self.pendingSeekMs = nil
-                        self.seek(to: pending, isScrubbing: isScrubbing)
+                    if let pending = self.pendingSeek {
+                        self.pendingSeek = nil
+                        self.seek(to: pending.ms, isScrubbing: pending.isScrubbing)
                     }
                 }
             }
@@ -196,6 +222,7 @@ class ProjectStore: ObservableObject {
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
             guard self.isPlaying else { return }
+            guard !self.isSeeking else { return } // Don't override during seek
             
             let currentSeconds = CMTimeGetSeconds(time)
             if !currentSeconds.isNaN && currentSeconds >= 0 {

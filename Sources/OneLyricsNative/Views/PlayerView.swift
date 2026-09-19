@@ -10,7 +10,8 @@ struct PlayerView: View {
             Color.black
             
             // 16:9 Canvas - fixed aspect ratio, never changes size with content
-            ZStack {
+            GeometryReader { geo in
+                ZStack {
                 if let bg = store.state.backgroundURL {
                     if bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov" {
                         if let bgPlayer = store.bgPlayer {
@@ -35,20 +36,25 @@ struct PlayerView: View {
                 }
                 
                 // Lyrics Overlay
+                let w = geo.size.width
+                let scaledFontSize = store.state.typography.fontSize * (w / 1920.0)
+                let scaledGlow = store.state.typography.glow * (w / 1920.0)
+                
                 VStack {
                     Spacer()
                     if let currentLyric = store.state.lyrics.first(where: { store.currentTimeMs >= $0.startMs && store.currentTimeMs <= $0.endMs }) {
                         Text(currentLyric.text)
-                            .font(.system(size: store.state.typography.fontSize, weight: .bold, design: .default))
+                            .font(.system(size: scaledFontSize, weight: .bold, design: .default))
                             .foregroundColor(Color(hex: store.state.typography.color))
-                            .shadow(color: .black.opacity(0.8), radius: store.state.typography.glow)
+                            .shadow(color: .black.opacity(0.8), radius: scaledGlow)
                             .multilineTextAlignment(.center)
                             .padding()
                             .transition(.opacity)
                     }
                     Spacer()
                 }
-            }
+            } // End ZStack
+            } // End GeometryReader
             .aspectRatio(16/9, contentMode: .fit)
             .cornerRadius(8)
             .overlay(

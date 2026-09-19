@@ -1,10 +1,12 @@
 import SwiftUI
+import AppKit
 
 struct TimelineView: View {
     @EnvironmentObject var store: ProjectStore
     @State private var scrubbingPosition: Double? = nil
     @State private var isScrubbing = false
     @State private var wasPlayingBeforeScrub = false
+    @State private var timelineScrollView: NSScrollView?
     
     var body: some View {
         GeometryReader { geo in
@@ -52,6 +54,9 @@ struct TimelineView: View {
                         Rectangle()
                             .fill(Color(red: 0.08, green: 0.08, blue: 0.09))
                             .frame(width: totalWidth, height: 210) // 30 ruler + 180 track
+                            
+                        ScrollViewExtractor(scrollView: $timelineScrollView)
+                            .frame(width: 0, height: 0)
                         
                         // Ruler ticks
                         TimelineRuler(totalWidth: totalWidth, durationMs: store.effectiveDuration)
@@ -120,6 +125,23 @@ struct TimelineView: View {
                     )
                 }
                 .background(Color(red: 0.05, green: 0.05, blue: 0.06))
+                .onChange(of: store.currentTimeMs) { _ in
+                    if store.isPlaying && !isScrubbing {
+                        if let nsScrollView = timelineScrollView, let documentView = nsScrollView.documentView {
+                            let activeTime = store.currentTimeMs
+                            let currentTotalWidth = max(geo.size.width, geo.size.width * store.timelineZoom)
+                            let px = store.effectiveDuration > 0 ? (activeTime / store.effectiveDuration) * currentTotalWidth : 0
+                            
+                            let viewportWidth = nsScrollView.contentSize.width
+                            let targetX = px - (viewportWidth / 2.0)
+                            
+                            let maxOffset = documentView.bounds.width - viewportWidth
+                            let safeX = max(0, min(targetX, maxOffset))
+                            
+                            documentView.scroll(NSPoint(x: safeX, y: 0))
+                        }
+                    }
+                }
             }
         }
     }
@@ -209,4 +231,18 @@ struct LyricBlockView: View {
             isHovered = hovering
         }
     }
+}
+
+struct ScrollViewExtractor: NSViewRepresentable {
+    @Binding var scrollView: NSScrollView?
+    
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            self.scrollView = view.enclosingScrollView
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

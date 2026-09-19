@@ -9,9 +9,9 @@ struct LyricBlock: Identifiable, Codable {
 
 struct TypographyConfig: Codable {
     var fontFamily: String = "Inter"
-    var fontSize: CGFloat = 64
+    var fontSize: CGFloat = 150
     var color: String = "#ffffff" // Hex
-    var glow: CGFloat = 10
+    var glow: CGFloat = 20
 }
 
 struct ProjectState: Codable {
