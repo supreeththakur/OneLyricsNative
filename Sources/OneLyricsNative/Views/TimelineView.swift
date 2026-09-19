@@ -4,6 +4,7 @@ struct TimelineView: View {
     @EnvironmentObject var store: ProjectStore
     @State private var scrubbingPosition: Double? = nil
     @State private var isScrubbing = false
+    @State private var wasPlayingBeforeScrub = false
     
     var body: some View {
         GeometryReader { geo in
@@ -90,18 +91,31 @@ struct TimelineView: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                isScrubbing = true
+                                if !isScrubbing {
+                                    isScrubbing = true
+                                    wasPlayingBeforeScrub = store.isPlaying
+                                    if wasPlayingBeforeScrub {
+                                        store.player?.pause()
+                                        store.bgPlayer?.pause()
+                                    }
+                                }
                                 let percent = max(0, min(1, value.location.x / totalWidth))
                                 let ms = percent * store.effectiveDuration
                                 scrubbingPosition = ms
-                                store.seek(to: ms)
+                                store.seek(to: ms, isScrubbing: true)
                             }
                             .onEnded { value in
-                                isScrubbing = false
                                 let percent = max(0, min(1, value.location.x / totalWidth))
                                 let ms = percent * store.effectiveDuration
                                 scrubbingPosition = nil
-                                store.seek(to: ms)
+                                store.seek(to: ms, isScrubbing: false)
+                                
+                                if wasPlayingBeforeScrub {
+                                    store.player?.play()
+                                    store.bgPlayer?.play()
+                                    wasPlayingBeforeScrub = false
+                                }
+                                isScrubbing = false
                             }
                     )
                 }

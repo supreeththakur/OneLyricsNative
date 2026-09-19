@@ -12,6 +12,11 @@ class ProjectStore: ObservableObject {
     var player: AVPlayer?
     var bgPlayer: AVPlayer? // Player for video backgrounds
     var timeObserver: Any?
+    var bgEndObserver: Any?
+    var playerEndObserver: Any?
+    
+    private var isSeeking: Bool = false
+    private var pendingSeekMs: Double? = nil
     
     // Fallback duration if audio is not loaded or NaN
     var effectiveDuration: Double {
@@ -30,13 +35,34 @@ class ProjectStore: ObservableObject {
     func setBackground(url: URL) {
         state.backgroundURL = url
         if url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov" {
-            bgPlayer = AVPlayer(url: url)
+            let item = AVPlayerItem(url: url)
+            let bp = AVPlayer(playerItem: item)
+            bp.actionAtItemEnd = .none
+            bgPlayer = bp
+            
+            // Loop background video automatically
+            if let obs = bgEndObserver { NotificationCenter.default.removeObserver(obs) }
+            bgEndObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { [weak self] _ in
+                self?.bgPlayer?.seek(to: .zero)
+                if self?.isPlaying == true {
+                    self?.bgPlayer?.play()
+                }
+            }
+            
             // If main audio hasn't been imported, the video acts as the main duration source
             if player == nil {
                 setupPlayer(url: url)
             }
         } else {
             bgPlayer = nil
+            if let obs = bgEndObserver {
+                NotificationCenter.default.removeObserver(obs)
+                bgEndObserver = nil
+            }
         }
     }
     
@@ -66,50 +92,122 @@ class ProjectStore: ObservableObject {
         if isPlaying {
             player?.pause()
             bgPlayer?.pause()
+            isPlaying = false
         } else {
+            // If at end of track, loop back to start
+            if currentTimeMs >= effectiveDuration - 200 {
+                seek(to: 0, isScrubbing: false)
+            }
             player?.play()
             bgPlayer?.play()
+            isPlaying = true
         }
-        isPlaying.toggle()
     }
     
-    func seek(to ms: Double) {
+    func seek(to ms: Double, isScrubbing: Bool = false) {
         guard effectiveDuration > 0 else { return }
-        let cmTime = CMTime(seconds: ms / 1000.0, preferredTimescale: 1000)
-        player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
-        bgPlayer?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
-        currentTimeMs = ms
+        
+        let boundedMs = max(0, min(ms, effectiveDuration))
+        currentTimeMs = boundedMs
+        
+        // Prevent queuing dozens of concurrent seeks that stall AVPlayer
+        if isSeeking {
+            pendingSeekMs = boundedMs
+            return
+        }
+        
+        isSeeking = true
+        let targetMs = boundedMs
+        let cmTime = CMTime(seconds: targetMs / 1000.0, preferredTimescale: 1000)
+        let tolerance = isScrubbing ? CMTime(seconds: 0.05, preferredTimescale: 1000) : .zero
+        
+        // Sync background video (looped modulo video duration)
+        if let bg = bgPlayer, let item = bg.currentItem {
+            let bgDur = CMTimeGetSeconds(item.duration)
+            if !bgDur.isNaN && bgDur > 0 {
+                let loopSeconds = fmod(targetMs / 1000.0, bgDur)
+                let bgTime = CMTime(seconds: loopSeconds, preferredTimescale: 600)
+                bg.seek(to: bgTime, toleranceBefore: tolerance, toleranceAfter: tolerance)
+            }
+        }
+        
+        // Seek main player
+        if let p = player {
+            p.seek(to: cmTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    self.isSeeking = false
+                    if let pending = self.pendingSeekMs {
+                        self.pendingSeekMs = nil
+                        self.seek(to: pending, isScrubbing: isScrubbing)
+                    }
+                }
+            }
+        } else {
+            isSeeking = false
+        }
     }
     
     private func setupPlayer(url: URL) {
         if let timeObserver = timeObserver {
             player?.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
         }
-        let item = AVPlayerItem(url: url)
-        player = AVPlayer(playerItem: item)
+        if let obs = playerEndObserver {
+            NotificationCenter.default.removeObserver(obs)
+            self.playerEndObserver = nil
+        }
         
-        // Wait for duration to load async
+        let asset = AVURLAsset(url: url)
+        let item = AVPlayerItem(asset: asset)
+        let p = AVPlayer(playerItem: item)
+        player = p
+        
+        // When song ends, stop playback cleanly and set position to end
+        playerEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.isPlaying = false
+            self.player?.pause()
+            self.bgPlayer?.pause()
+            self.currentTimeMs = self.effectiveDuration
+        }
+        
+        // Load duration asynchronously
         Task {
-            if let asset = player?.currentItem?.asset {
-                do {
-                    let duration = try await asset.load(.duration)
+            do {
+                let duration = try await asset.load(.duration)
+                let durSeconds = CMTimeGetSeconds(duration)
+                if !durSeconds.isNaN && durSeconds > 0 {
                     DispatchQueue.main.async {
-                        self.state.durationMs = duration.seconds.isNaN ? 0 : duration.seconds * 1000.0
+                        self.state.durationMs = durSeconds * 1000.0
                     }
-                } catch {
-                    print("Failed to load duration")
                 }
+            } catch {
+                print("Failed to load duration from asset: \(error)")
             }
         }
         
-        let interval = CMTime(seconds: 0.05, preferredTimescale: 1000)
+        // Periodic time observer for smooth playhead tracking
+        let interval = CMTime(seconds: 0.033, preferredTimescale: 1000) // ~30 fps
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            guard let self = self, self.isPlaying else { return }
-            self.currentTimeMs = time.seconds * 1000.0
+            guard let self = self else { return }
+            guard self.isPlaying else { return }
             
-            let dur = self.player?.currentItem?.duration.seconds ?? 0
-            if !dur.isNaN && dur > 0 {
-                self.state.durationMs = dur * 1000.0
+            let currentSeconds = CMTimeGetSeconds(time)
+            if !currentSeconds.isNaN && currentSeconds >= 0 {
+                self.currentTimeMs = currentSeconds * 1000.0
+            }
+            
+            // Fallback duration check if not yet populated
+            if let dur = self.player?.currentItem?.duration {
+                let s = CMTimeGetSeconds(dur)
+                if !s.isNaN && s > 0 && (self.state.durationMs == 0 || self.state.durationMs.isNaN) {
+                    self.state.durationMs = s * 1000.0
+                }
             }
         }
     }
