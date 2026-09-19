@@ -48,16 +48,31 @@ class VideoExporter: ObservableObject {
             return
         }
         
-        // Snapshot data from main thread before going to background
+        // Snapshot data from main thread before background execution
         var bgCGImage: CGImage? = nil
+        var bgImageGenerator: AVAssetImageGenerator? = nil
+        var bgVideoDurationSec: Double = 0
+        
         if let bgURL = store.state.backgroundURL {
             let ext = bgURL.pathExtension.lowercased()
-            if ext != "mp4" && ext != "mov" {
-                if let nsImg = NSImage(contentsOf: bgURL) {
-                    bgCGImage = nsImg.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            if ext == "mp4" || ext == "mov" {
+                let asset = AVURLAsset(url: bgURL)
+                let generator = AVAssetImageGenerator(asset: asset)
+                generator.appliesPreferredTrackTransform = true
+                generator.requestedTimeToleranceBefore = .zero
+                generator.requestedTimeToleranceAfter = .zero
+                generator.maximumSize = CGSize(width: width, height: height)
+                bgImageGenerator = generator
+                
+                let duration = CMTimeGetSeconds(asset.duration)
+                if !duration.isNaN && duration > 0 {
+                    bgVideoDurationSec = duration
                 }
+            } else if let nsImg = NSImage(contentsOf: bgURL) {
+                bgCGImage = nsImg.cgImage(forProposedRect: nil, context: nil, hints: nil)
             }
         }
+        
         let lyrics = store.state.lyrics
         let typography = store.state.typography
         let audioURL = store.state.audioURL
@@ -73,11 +88,17 @@ class VideoExporter: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             
+            // If audio exists, write video to a temporary file first, then mux audio
+            let hasAudio = (audioURL != nil && FileManager.default.fileExists(atPath: audioURL!.path))
+            let renderOutputURL = hasAudio
+                ? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + (format == "MOV" ? "mov" : "mp4"))
+                : outputURL
+            
             do {
                 let fileType: AVFileType = format == "MOV" ? .mov : .mp4
-                try? FileManager.default.removeItem(at: outputURL)
+                try? FileManager.default.removeItem(at: renderOutputURL)
                 
-                let writer = try AVAssetWriter(outputURL: outputURL, fileType: fileType)
+                let writer = try AVAssetWriter(outputURL: renderOutputURL, fileType: fileType)
                 
                 let codec: AVVideoCodecType = format == "MOV" ? .proRes422 : .h264
                 var videoSettings: [String: Any] = [
@@ -109,20 +130,13 @@ class VideoExporter: ObservableObject {
                 writer.startWriting()
                 writer.startSession(atSourceTime: .zero)
                 
-                // Wait for pool to be ready
-                var poolReady = false
-                for _ in 0..<50 {
-                    if adaptor.pixelBufferPool != nil {
-                        poolReady = true
-                        break
-                    }
-                    Thread.sleep(forTimeInterval: 0.05)
-                }
+                // Color configuration: sRGB color space + Little-Endian PremultipliedFirst
+                // This ensures kCVPixelFormatType_32BGRA bytes in memory are [B, G, R, A] matching little-endian ARGB
+                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+                let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+                    .union(.byteOrder32Little)
                 
-                if !poolReady {
-                    // Fallback: create pixel buffer manually for first frame
-                    print("Pool not ready, creating manually")
-                }
+                var lastRenderedBgFrame: CGImage? = bgCGImage
                 
                 // Render all frames
                 for frameIndex in 0..<totalFrames {
@@ -162,19 +176,28 @@ class VideoExporter: ObservableObject {
                         height: height,
                         bitsPerComponent: 8,
                         bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
-                        space: CGColorSpaceCreateDeviceRGB(),
-                        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+                        space: colorSpace,
+                        bitmapInfo: bitmapInfo.rawValue
                     ) else {
                         CVPixelBufferUnlockBaseAddress(buffer, [])
                         continue
                     }
                     
-                    // 1. Black background
+                    // 1. Black background fill
                     context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
                     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
                     
-                    // 2. Background image (scale to fill)
-                    if let cgImage = bgCGImage {
+                    // 2. Background image or video frame
+                    if let generator = bgImageGenerator {
+                        let timeSec = currentMs / 1000.0
+                        let loopTime = bgVideoDurationSec > 0 ? fmod(timeSec, bgVideoDurationSec) : timeSec
+                        let cmTime = CMTime(seconds: loopTime, preferredTimescale: 600)
+                        if let frame = try? generator.copyCGImage(at: cmTime, actualTime: nil) {
+                            lastRenderedBgFrame = frame
+                        }
+                    }
+                    
+                    if let cgImage = lastRenderedBgFrame {
                         let imgW = CGFloat(cgImage.width)
                         let imgH = CGFloat(cgImage.height)
                         let canvasW = CGFloat(width)
@@ -187,7 +210,7 @@ class VideoExporter: ObservableObject {
                         context.draw(cgImage, in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
                     }
                     
-                    // 3. Lyrics text
+                    // 3. Lyrics text overlay
                     if let currentLyric = lyrics.first(where: { currentMs >= $0.startMs && currentMs <= $0.endMs }) {
                         let text = currentLyric.text as NSString
                         let fontSize = typography.fontSize * CGFloat(width) / 1920.0
@@ -213,7 +236,7 @@ class VideoExporter: ObservableObject {
                         let textX = (CGFloat(width) - textSize.width) / 2
                         let textY = CGFloat(height) / 2 - textSize.height / 2
                         
-                        // Flip for text drawing
+                        // Flip coordinates for text drawing in CoreGraphics
                         context.saveGState()
                         context.translateBy(x: 0, y: CGFloat(height))
                         context.scaleBy(x: 1, y: -1)
@@ -235,9 +258,9 @@ class VideoExporter: ObservableObject {
                         print("Failed to append frame \(frameIndex): \(writer.error?.localizedDescription ?? "unknown")")
                     }
                     
-                    // Update progress every ~1%
+                    // Update progress (scale to 0.0 - 0.9 if audio muxing follows, or 0.0 - 1.0)
                     if frameIndex % max(1, totalFrames / 100) == 0 {
-                        let prog = Double(frameIndex + 1) / Double(totalFrames)
+                        let prog = (Double(frameIndex + 1) / Double(totalFrames)) * (hasAudio ? 0.9 : 1.0)
                         DispatchQueue.main.async {
                             self.progress = prog
                         }
@@ -246,21 +269,47 @@ class VideoExporter: ObservableObject {
                 
                 videoInput.markAsFinished()
                 
-                // Finish writing
+                // Finish writing video frames
                 let semaphore = DispatchSemaphore(value: 0)
                 writer.finishWriting {
                     semaphore.signal()
                 }
                 semaphore.wait()
                 
-                DispatchQueue.main.async {
-                    if writer.status == .completed {
+                guard writer.status == .completed else {
+                    let errMessage = writer.error?.localizedDescription ?? "Video encoding failed"
+                    DispatchQueue.main.async {
+                        self.exportError = errMessage
+                        self.isExporting = false
+                    }
+                    return
+                }
+                
+                // If audio exists, merge it with the rendered video
+                if hasAudio, let audio = audioURL {
+                    self.mergeAudio(
+                        videoURL: renderOutputURL,
+                        audioURL: audio,
+                        outputURL: outputURL,
+                        durationMs: durationMs
+                    ) { result in
+                        DispatchQueue.main.async {
+                            self.progress = 1.0
+                            self.isExporting = false
+                            switch result {
+                            case .success(let finalURL):
+                                self.exportedURL = finalURL
+                            case .failure(let err):
+                                print("Audio muxing notice: \(err.localizedDescription)")
+                                self.exportedURL = renderOutputURL
+                            }
+                        }
+                    }
+                } else {
+                    DispatchQueue.main.async {
                         self.progress = 1.0
                         self.isExporting = false
                         self.exportedURL = outputURL
-                    } else {
-                        self.exportError = writer.error?.localizedDescription ?? "Export failed"
-                        self.isExporting = false
                     }
                 }
                 
@@ -270,6 +319,61 @@ class VideoExporter: ObservableObject {
                     self.isExporting = false
                 }
             }
+        }
+    }
+    
+    // Helper to mux audio track into video file without re-encoding video frames
+    private func mergeAudio(
+        videoURL: URL,
+        audioURL: URL,
+        outputURL: URL,
+        durationMs: Double,
+        completion: @escaping (Result<URL, Error>) -> Void
+    ) {
+        let composition = AVMutableComposition()
+        let videoAsset = AVURLAsset(url: videoURL)
+        let audioAsset = AVURLAsset(url: audioURL)
+        
+        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
+              let assetVideoTrack = videoAsset.tracks(withMediaType: .video).first else {
+            completion(.success(videoURL))
+            return
+        }
+        
+        let targetDuration = CMTime(seconds: durationMs / 1000.0, preferredTimescale: 600)
+        let videoDuration = min(videoAsset.duration, targetDuration)
+        let timeRange = CMTimeRange(start: .zero, duration: videoDuration)
+        
+        do {
+            try videoTrack.insertTimeRange(timeRange, of: assetVideoTrack, at: .zero)
+            videoTrack.preferredTransform = assetVideoTrack.preferredTransform
+            
+            if let assetAudioTrack = audioAsset.tracks(withMediaType: .audio).first,
+               let compositionAudioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                let audioDuration = min(audioAsset.duration, targetDuration)
+                try compositionAudioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: audioDuration), of: assetAudioTrack, at: .zero)
+            }
+            
+            guard let exportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+                completion(.success(videoURL))
+                return
+            }
+            
+            try? FileManager.default.removeItem(at: outputURL)
+            exportSession.outputURL = outputURL
+            exportSession.outputFileType = outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4
+            
+            exportSession.exportAsynchronously {
+                if exportSession.status == .completed {
+                    try? FileManager.default.removeItem(at: videoURL)
+                    completion(.success(outputURL))
+                } else {
+                    // Fallback to video file if muxing fails
+                    completion(.success(videoURL))
+                }
+            }
+        } catch {
+            completion(.success(videoURL))
         }
     }
 }
