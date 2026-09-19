@@ -4,20 +4,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "OneLyricsNative",
+    name: "OneLyrics",
     platforms: [
         .macOS(.v14) // Requires macOS 14 Sonoma or later for advanced SwiftUI features
     ],
     products: [
         .executable(
-            name: "OneLyricsNative",
-            targets: ["OneLyricsNative"]),
+            name: "OneLyrics",
+            targets: ["OneLyrics"]),
     ],
     targets: [
         .executableTarget(
-            name: "OneLyricsNative",
+            name: "OneLyrics",
             dependencies: [],
-            path: "Sources/OneLyricsNative"
+            path: "Sources/OneLyrics"
         ),
     ]
 )

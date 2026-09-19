@@ -1,8 +1,8 @@
-# OneLyrics 🎵
+# OneLyricsNative v1.0.0 🚀
 
-**OneLyrics** is a high-performance, fully native macOS application for creating professional lyrical videos. Built entirely with SwiftUI and AppKit, it delivers a buttery smooth editing experience, real-time typography scaling, and flawless export capabilities using `AVAssetWriter`.
+Welcome to the first official release of **OneLyricsNative**! This version brings a fully native, high-performance lyrical video editing experience to macOS.
 
-## 🚀 Features
+## 🌟 Key Features
 
 * **MP3 Auto-Conversion:** Automatically converts unsupported audio files (like MP3) to M4A for seamless timeline scrubbing and guaranteed `AVAssetWriter` export compatibility.
 * **Native Video Exporting:** Export your lyric videos natively using `AVAssetWriter` with zero deadlocks. Features perfectly interleaved audio/video channels and high-performance rendering.
@@ -11,26 +11,8 @@
 * **Customizable Shadow/Glow:** High-end typography features including adjustable fonts, sizing, glow intensity, and real-time previewing.
 * **SRT Parsing:** Easily import, edit, and sync LRC/SRT files.
 
-## 📦 Installation
-
-1. Head over to the [Releases](https://github.com/supreeththakur/OneLyrics/releases) page.
-2. Download the latest `OneLyrics.dmg` file.
-3. Open the DMG and drag **OneLyrics** to your Applications folder.
-4. Launch the app and start creating!
-
-## 🛠️ Development
-
-### Requirements
-- macOS 14 Sonoma or later
-- Xcode 15 or later
-- Swift 5.10 or later
-
-### Build Instructions
-Clone the repository and run:
-```bash
-swift build -c release
-```
-To run the app locally:
-```bash
-swift run
-```
+## 🛠️ Installation
+1. Download `OneLyricsNative.dmg` below.
+2. Open the DMG file.
+3. Drag **OneLyricsNative** to the `Applications` folder.
+4. Launch and enjoy!
