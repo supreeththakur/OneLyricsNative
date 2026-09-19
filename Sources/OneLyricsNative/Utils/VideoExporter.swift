@@ -75,7 +75,20 @@ class VideoExporter: ObservableObject {
         
         let lyrics = store.state.lyrics
         let typography = store.state.typography
-        let audioURL = store.state.audioURL
+        
+        // Determine audio source: explicit audio file or background video audio track
+        let resolvedAudioURL: URL? = {
+            if let a = store.state.audioURL, FileManager.default.fileExists(atPath: a.path) {
+                return a
+            }
+            if let bg = store.state.backgroundURL, (bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov") {
+                let asset = AVURLAsset(url: bg)
+                if !asset.tracks(withMediaType: .audio).isEmpty {
+                    return bg
+                }
+            }
+            return nil
+        }()
         
         // Parse text color
         let hexColor = typography.color.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
@@ -88,18 +101,13 @@ class VideoExporter: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             
-            // If audio exists, write video to a temporary file first, then mux audio
-            let hasAudio = (audioURL != nil && FileManager.default.fileExists(atPath: audioURL!.path))
-            let renderOutputURL = hasAudio
-                ? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + (format == "MOV" ? "mov" : "mp4"))
-                : outputURL
-            
             do {
                 let fileType: AVFileType = format == "MOV" ? .mov : .mp4
-                try? FileManager.default.removeItem(at: renderOutputURL)
+                try? FileManager.default.removeItem(at: outputURL)
                 
-                let writer = try AVAssetWriter(outputURL: renderOutputURL, fileType: fileType)
+                let writer = try AVAssetWriter(outputURL: outputURL, fileType: fileType)
                 
+                // 1. Video Output Setup
                 let codec: AVVideoCodecType = format == "MOV" ? .proRes422 : .h264
                 var videoSettings: [String: Any] = [
                     AVVideoCodecKey: codec,
@@ -125,10 +133,52 @@ class VideoExporter: ObservableObject {
                     assetWriterInput: videoInput,
                     sourcePixelBufferAttributes: pixelAttrs
                 )
-                
                 writer.add(videoInput)
+                
+                // 2. Audio Setup (Read from audio source, encode to AAC directly into output file)
+                var audioInput: AVAssetWriterInput? = nil
+                var audioReader: AVAssetReader? = nil
+                var audioOutput: AVAssetReaderTrackOutput? = nil
+                
+                if let audioURL = resolvedAudioURL {
+                    let audioAsset = AVURLAsset(url: audioURL)
+                    if let audioTrack = audioAsset.tracks(withMediaType: .audio).first {
+                        let aacSettings: [String: Any] = [
+                            AVFormatIDKey: kAudioFormatMPEG4AAC,
+                            AVNumberOfChannelsKey: 2,
+                            AVSampleRateKey: 44100,
+                            AVEncoderBitRateKey: 192000
+                        ]
+                        let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: aacSettings)
+                        aInput.expectsMediaDataInRealTime = false
+                        
+                        if writer.canAdd(aInput) {
+                            writer.add(aInput)
+                            audioInput = aInput
+                            
+                            // Setup reader to decode audio to Linear PCM
+                            if let reader = try? AVAssetReader(asset: audioAsset) {
+                                let pcmSettings: [String: Any] = [
+                                    AVFormatIDKey: kAudioFormatLinearPCM,
+                                    AVLinearPCMBitDepthKey: 16,
+                                    AVLinearPCMIsFloatKey: false,
+                                    AVLinearPCMIsBigEndianKey: false,
+                                    AVLinearPCMIsNonInterleaved: false
+                                ]
+                                let aOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: pcmSettings)
+                                if reader.canAdd(aOutput) {
+                                    reader.add(aOutput)
+                                    audioReader = reader
+                                    audioOutput = aOutput
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 writer.startWriting()
                 writer.startSession(atSourceTime: .zero)
+                audioReader?.startReading()
                 
                 // Color configuration: sRGB color space + Little-Endian PremultipliedFirst
                 // This ensures kCVPixelFormatType_32BGRA bytes in memory are [B, G, R, A] matching little-endian ARGB
@@ -138,7 +188,7 @@ class VideoExporter: ObservableObject {
                 
                 var lastRenderedBgFrame: CGImage? = bgCGImage
                 
-                // Render all frames
+                // Render all video frames
                 for frameIndex in 0..<totalFrames {
                     // Wait for input to be ready
                     while !videoInput.isReadyForMoreMediaData {
@@ -258,9 +308,9 @@ class VideoExporter: ObservableObject {
                         print("Failed to append frame \(frameIndex): \(writer.error?.localizedDescription ?? "unknown")")
                     }
                     
-                    // Update progress (scale to 0.0 - 0.9 if audio muxing follows, or 0.0 - 1.0)
+                    // Update progress (scale to 0.0 - 0.95 during video render)
                     if frameIndex % max(1, totalFrames / 100) == 0 {
-                        let prog = (Double(frameIndex + 1) / Double(totalFrames)) * (hasAudio ? 0.9 : 1.0)
+                        let prog = (Double(frameIndex + 1) / Double(totalFrames)) * 0.95
                         DispatchQueue.main.async {
                             self.progress = prog
                         }
@@ -269,47 +319,39 @@ class VideoExporter: ObservableObject {
                 
                 videoInput.markAsFinished()
                 
-                // Finish writing video frames
+                // Write audio samples directly to file
+                if let aInput = audioInput, let aOutput = audioOutput {
+                    let maxDurationSec = durationMs / 1000.0
+                    while aInput.isReadyForMoreMediaData {
+                        if let sbuf = aOutput.copyNextSampleBuffer() {
+                            let pts = CMSampleBufferGetPresentationTimeStamp(sbuf)
+                            if CMTimeGetSeconds(pts) >= maxDurationSec {
+                                break
+                            }
+                            aInput.append(sbuf)
+                        } else {
+                            break
+                        }
+                    }
+                    aInput.markAsFinished()
+                }
+                
+                // Finish writing everything
                 let semaphore = DispatchSemaphore(value: 0)
                 writer.finishWriting {
                     semaphore.signal()
                 }
                 semaphore.wait()
                 
-                guard writer.status == .completed else {
-                    let errMessage = writer.error?.localizedDescription ?? "Video encoding failed"
-                    DispatchQueue.main.async {
-                        self.exportError = errMessage
-                        self.isExporting = false
-                    }
-                    return
-                }
-                
-                // If audio exists, merge it with the rendered video
-                if hasAudio, let audio = audioURL {
-                    self.mergeAudio(
-                        videoURL: renderOutputURL,
-                        audioURL: audio,
-                        outputURL: outputURL,
-                        durationMs: durationMs
-                    ) { result in
-                        DispatchQueue.main.async {
-                            self.progress = 1.0
-                            self.isExporting = false
-                            switch result {
-                            case .success(let finalURL):
-                                self.exportedURL = finalURL
-                            case .failure(let err):
-                                print("Audio muxing notice: \(err.localizedDescription)")
-                                self.exportedURL = renderOutputURL
-                            }
-                        }
-                    }
-                } else {
-                    DispatchQueue.main.async {
+                DispatchQueue.main.async {
+                    if writer.status == .completed {
                         self.progress = 1.0
                         self.isExporting = false
                         self.exportedURL = outputURL
+                    } else {
+                        let err = writer.error?.localizedDescription ?? "Video encoding failed"
+                        self.exportError = err
+                        self.isExporting = false
                     }
                 }
                 
@@ -319,61 +361,6 @@ class VideoExporter: ObservableObject {
                     self.isExporting = false
                 }
             }
-        }
-    }
-    
-    // Helper to mux audio track into video file without re-encoding video frames
-    private func mergeAudio(
-        videoURL: URL,
-        audioURL: URL,
-        outputURL: URL,
-        durationMs: Double,
-        completion: @escaping (Result<URL, Error>) -> Void
-    ) {
-        let composition = AVMutableComposition()
-        let videoAsset = AVURLAsset(url: videoURL)
-        let audioAsset = AVURLAsset(url: audioURL)
-        
-        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
-              let assetVideoTrack = videoAsset.tracks(withMediaType: .video).first else {
-            completion(.success(videoURL))
-            return
-        }
-        
-        let targetDuration = CMTime(seconds: durationMs / 1000.0, preferredTimescale: 600)
-        let videoDuration = min(videoAsset.duration, targetDuration)
-        let timeRange = CMTimeRange(start: .zero, duration: videoDuration)
-        
-        do {
-            try videoTrack.insertTimeRange(timeRange, of: assetVideoTrack, at: .zero)
-            videoTrack.preferredTransform = assetVideoTrack.preferredTransform
-            
-            if let assetAudioTrack = audioAsset.tracks(withMediaType: .audio).first,
-               let compositionAudioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-                let audioDuration = min(audioAsset.duration, targetDuration)
-                try compositionAudioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: audioDuration), of: assetAudioTrack, at: .zero)
-            }
-            
-            guard let exportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
-                completion(.success(videoURL))
-                return
-            }
-            
-            try? FileManager.default.removeItem(at: outputURL)
-            exportSession.outputURL = outputURL
-            exportSession.outputFileType = outputURL.pathExtension.lowercased() == "mov" ? .mov : .mp4
-            
-            exportSession.exportAsynchronously {
-                if exportSession.status == .completed {
-                    try? FileManager.default.removeItem(at: videoURL)
-                    completion(.success(outputURL))
-                } else {
-                    // Fallback to video file if muxing fails
-                    completion(.success(videoURL))
-                }
-            }
-        } catch {
-            completion(.success(videoURL))
         }
     }
 }
