@@ -23,6 +23,18 @@ class ProjectStore: ObservableObject {
     private var isSeeking: Bool = false
     private var pendingSeek: (ms: Double, isScrubbing: Bool)? = nil
     
+    init(initialState: ProjectState = ProjectState()) {
+        self.state = initialState
+        
+        if let audio = initialState.audioURL {
+            setAudio(url: audio)
+        }
+        
+        if let bg = initialState.backgroundURL {
+            setBackground(url: bg)
+        }
+    }
+    
     // Fallback duration if audio is not loaded or NaN
     var effectiveDuration: Double {
         if state.durationMs > 0 && !state.durationMs.isNaN { return state.durationMs }

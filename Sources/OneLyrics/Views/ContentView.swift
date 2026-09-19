@@ -4,6 +4,7 @@ import AppKit
 
 struct ContentView: View {
     @EnvironmentObject var store: ProjectStore
+    var onBack: () -> Void = {}
     @State private var showExportModal = false
     
     var body: some View {
@@ -34,6 +35,14 @@ struct ContentView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
+                    Button(action: onBack) {
+                        HStack {
+                            Image(systemName: "chevron.left")
+                            Text("Projects")
+                        }
+                    }
+                }
+                ToolbarItem(placement: .principal) {
                     Text(store.state.title)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                 }

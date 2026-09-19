@@ -4,7 +4,8 @@ import AppKit
 
 @main
 struct OneLyricsNativeApp: App {
-    @StateObject private var projectStore = ProjectStore()
+    @StateObject private var projectManager = ProjectManager()
+    @State private var activeProject: ProjectState? = nil
     
     init() {
         // Register locally downloaded fonts dynamically on app launch
@@ -27,21 +28,53 @@ struct OneLyricsNativeApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(projectStore)
-                .preferredColorScheme(.dark)
-                .frame(minWidth: 1000, minHeight: 700)
-                .onAppear {
-                    NSApplication.shared.activate(ignoringOtherApps: true)
+            if let project = activeProject {
+                ProjectEditorWrapper(
+                    project: project,
+                    projectManager: projectManager,
+                    onBack: { activeProject = nil }
+                )
+            } else {
+                HomeView(projectManager: projectManager) { selectedProject in
+                    activeProject = selectedProject
                 }
-                .onReceive(NotificationCenter.default.publisher(for: .spacebarPressed)) { _ in
-                    projectStore.togglePlayPause()
-                }
+            }
         }
         .windowStyle(HiddenTitleBarWindowStyle())
         .commands {
             CommandGroup(replacing: .newItem) { }
         }
+    }
+}
+
+struct ProjectEditorWrapper: View {
+    @StateObject private var store: ProjectStore
+    let projectManager: ProjectManager
+    let onBack: () -> Void
+    
+    init(project: ProjectState, projectManager: ProjectManager, onBack: @escaping () -> Void) {
+        _store = StateObject(wrappedValue: ProjectStore(initialState: project))
+        self.projectManager = projectManager
+        self.onBack = onBack
+    }
+    
+    var body: some View {
+        ContentView(onBack: {
+            projectManager.saveProject(store.state)
+            onBack()
+        })
+        .environmentObject(store)
+        .preferredColorScheme(.dark)
+        .frame(minWidth: 1000, minHeight: 700)
+        .onAppear {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .spacebarPressed)) { _ in
+            store.togglePlayPause()
+        }
+        .onChange(of: store.state.title) { _ in projectManager.saveProject(store.state) }
+        // We could observe other changes, but saving on back is explicitly implemented.
+        // Also save periodically or on specific actions if needed.
     }
 }
 

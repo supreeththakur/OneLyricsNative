@@ -49,8 +49,10 @@ struct MediaConfig: Codable {
     var cropScale: Double = 1.0
 }
 
-struct ProjectState: Codable {
+struct ProjectState: Codable, Identifiable {
+    var id: UUID = UUID()
     var title: String = "Untitled Project"
+    var lastModified: Date = Date()
     var audioURL: URL?
     var backgroundURL: URL?
     var durationMs: Double = 0
