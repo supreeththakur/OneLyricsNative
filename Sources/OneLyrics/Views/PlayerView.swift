@@ -21,8 +21,8 @@ struct PlayerView: View {
                             if let bgPlayer = store.bgPlayer {
                                 Color.clear
                                     .overlay(
-                                        VideoPlayer(player: bgPlayer)
-                                            .disabled(true)
+                                    AVPlayerViewRepresentable(player: bgPlayer)
+                                        .disabled(true)
                                     )
                             }
                         } else if let nsImage = NSImage(contentsOf: bg) {
@@ -36,8 +36,8 @@ struct PlayerView: View {
                     }
                     .scaleEffect(store.state.mediaConfig.cropScale)
                     .offset(
-                        x: store.state.mediaConfig.cropOffsetX,
-                        y: store.state.mediaConfig.cropOffsetY
+                        x: store.state.mediaConfig.cropOffsetX * (geo.size.width / 1920.0),
+                        y: store.state.mediaConfig.cropOffsetY * (geo.size.height / 1080.0)
                     )
                     .brightness(store.state.mediaConfig.brightness)
                     .contrast(store.state.mediaConfig.contrast)
@@ -352,5 +352,21 @@ struct NativeStrokeText: View {
                 isLeading: isLeading
             )
         }
+    }
+}
+
+struct AVPlayerViewRepresentable: NSViewRepresentable {
+    var player: AVPlayer
+    
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .none
+        view.videoGravity = .resizeAspectFill
+        return view
+    }
+    
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        nsView.player = player
     }
 }

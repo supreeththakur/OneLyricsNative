@@ -25,7 +25,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.0</string>
+    <string>1.1</string>
     <key>CFBundleVersion</key>
     <string>2</string>
     <key>LSMinimumSystemVersion</key>
@@ -73,9 +73,9 @@ echo "Uploading DMG to GitHub..."
 export PATH="/usr/bin:$PATH"
 
 # Create release if it doesn't exist
-gh release create v1.1.0 -t "v1.1.0" -n "v1.1 Release" || true
+gh release create v1.1 -t "v1.1" -n "v1.1 Release" || true
 
 # Upload the dmg
-gh release upload v1.1.0 OneLyrics.dmg --clobber
+gh release upload v1.1 OneLyrics.dmg --clobber
 
 echo "Done!"
