@@ -265,6 +265,20 @@ class VideoExporter: ObservableObject {
                         return
                     }
                     
+                    // Create reusable text bitmap rep to avoid AppKit Retina scaling bug
+                    let textBitmapRep = NSBitmapImageRep(
+                        bitmapDataPlanes: nil,
+                        pixelsWide: width,
+                        pixelsHigh: height,
+                        bitsPerSample: 8,
+                        samplesPerPixel: 4,
+                        hasAlpha: true,
+                        isPlanar: false,
+                        colorSpaceName: .deviceRGB,
+                        bytesPerRow: width * 4,
+                        bitsPerPixel: 32
+                    )!
+                    
                     // 1. Black background fill
                     context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
                     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
@@ -437,14 +451,21 @@ class VideoExporter: ObservableObject {
                             attrs[.shadow] = shadow
                         }
                         
-                        let textSize = displayText.size(withAttributes: attrs)
+                        let paddingX = typography.edgePadding * (CGFloat(width) / 1920.0)
+                        let maxTextWidth = CGFloat(width) - (paddingX * 2.0)
                         
-
+                        let textBounds = displayText.boundingRect(
+                            with: NSSize(width: maxTextWidth, height: .greatestFiniteMagnitude),
+                            options: [.usesLineFragmentOrigin, .usesFontLeading],
+                            attributes: attrs,
+                            context: nil
+                        )
+                        let textSize = textBounds.size
                         
                         let textX: CGFloat
                         switch typography.alignment {
                         case .center: textX = CGFloat(width) / 2.0 - textSize.width / 2.0 + xOffset
-                        case .bottomLeading: textX = 80.0 * (CGFloat(width)/1920.0) + xOffset
+                        case .bottomLeading: textX = paddingX + xOffset
                         default: textX = CGFloat(width) / 2.0 - textSize.width / 2.0 + xOffset
                         }
                         
@@ -458,21 +479,25 @@ class VideoExporter: ObservableObject {
                         
                         let textRect = NSRect(x: textX, y: textY, width: CGFloat(width), height: textSize.height)
                         
-                        // Flip coordinates for text drawing in CoreGraphics
-                        context.saveGState()
-                        context.translateBy(x: 0, y: CGFloat(height))
-                        context.scaleBy(x: 1, y: -1)
+                        // Draw text into textBitmapRep to prevent AppKit retina scaling bug
+                        NSGraphicsContext.saveGraphicsState()
+                        let baseContext = NSGraphicsContext(bitmapImageRep: textBitmapRep)!
+                        let textCGContext = baseContext.cgContext
+                        textCGContext.clear(CGRect(x: 0, y: 0, width: width, height: height))
+                        
+                        textCGContext.saveGState()
+                        textCGContext.translateBy(x: 0, y: CGFloat(height))
+                        textCGContext.scaleBy(x: 1, y: -1)
                         
                         // Apply Scale transform around center of text
                         let centerX = textX + textSize.width / 2
                         let centerY = textY + textSize.height / 2
-                        context.translateBy(x: centerX, y: centerY)
-                        context.scaleBy(x: scale, y: scale)
-                        context.translateBy(x: -centerX, y: -centerY)
+                        textCGContext.translateBy(x: centerX, y: centerY)
+                        textCGContext.scaleBy(x: scale, y: scale)
+                        textCGContext.translateBy(x: -centerX, y: -centerY)
                         
-                        NSGraphicsContext.saveGraphicsState()
-                        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-                        let drawRect = CGRect(x: textX, y: textY, width: textSize.width + 100, height: textSize.height + 50)
+                        NSGraphicsContext.current = NSGraphicsContext(cgContext: textCGContext, flipped: true)
+                        let drawRect = CGRect(x: textX, y: textY, width: textSize.width + 10, height: textSize.height + 50)
                         
                         if typography.hasStroke && typography.strokeWidth > 0 {
                             var strokeAttrs = attrs
@@ -486,12 +511,17 @@ class VideoExporter: ObservableObject {
                             strokeAttrs[.strokeColor] = NSColor(red: sR, green: sG, blue: sB, alpha: textAlpha)
                             strokeAttrs[.strokeWidth] = typography.strokeWidth * 2.0
                             
-                            displayText.draw(in: drawRect, withAttributes: strokeAttrs)
+                            displayText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: strokeAttrs, context: nil)
                         }
                         
-                        displayText.draw(in: drawRect, withAttributes: attrs)
+                        displayText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs, context: nil)
+                        textCGContext.restoreGState()
                         NSGraphicsContext.restoreGraphicsState()
-                        context.restoreGState()
+                        
+                        // Draw the resulting bitmap into our main video context
+                        if let cgImage = textBitmapRep.cgImage {
+                            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+                        }
                     }
                     
                     CVPixelBufferUnlockBaseAddress(buffer, [])

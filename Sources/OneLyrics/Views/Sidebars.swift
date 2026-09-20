@@ -443,6 +443,12 @@ struct InspectorSidebar: View {
                             }
                             
                             VStack(alignment: .leading, spacing: 4) {
+                                Text("Edge Padding: \(Int(store.state.typography.edgePadding))px").font(.caption2).foregroundColor(.gray)
+                                Slider(value: $store.state.typography.edgePadding, in: 0...400)
+                                    .tint(.purple)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text("Glow Intensity: \(Int(store.state.typography.glow))px").font(.caption2).foregroundColor(.gray)
                                 Slider(value: $store.state.typography.glow, in: 0...100)
                                     .tint(.purple)

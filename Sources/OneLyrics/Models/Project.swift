@@ -39,6 +39,24 @@ struct TypographyConfig: Codable {
     var strokeColor: String = "#000000"
     var animationStyle: AnimationStyle = .fade
     var alignment: TextAlignmentStyle = .center
+    var edgePadding: CGFloat = 80.0
+    
+    init() {}
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fontFamily = try container.decodeIfPresent(String.self, forKey: .fontFamily) ?? "Inter"
+        fontSize = try container.decodeIfPresent(CGFloat.self, forKey: .fontSize) ?? 150
+        color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#ffffff"
+        glow = try container.decodeIfPresent(CGFloat.self, forKey: .glow) ?? 20
+        glowColor = try container.decodeIfPresent(String.self, forKey: .glowColor)
+        hasStroke = try container.decodeIfPresent(Bool.self, forKey: .hasStroke) ?? false
+        strokeWidth = try container.decodeIfPresent(CGFloat.self, forKey: .strokeWidth) ?? 3.0
+        strokeColor = try container.decodeIfPresent(String.self, forKey: .strokeColor) ?? "#000000"
+        animationStyle = try container.decodeIfPresent(AnimationStyle.self, forKey: .animationStyle) ?? .fade
+        alignment = try container.decodeIfPresent(TextAlignmentStyle.self, forKey: .alignment) ?? .center
+        edgePadding = try container.decodeIfPresent(CGFloat.self, forKey: .edgePadding) ?? 80.0
+    }
 }
 
 struct MediaConfig: Codable {
