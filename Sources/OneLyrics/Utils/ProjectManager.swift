@@ -67,6 +67,15 @@ class ProjectManager: ObservableObject {
             let data = try JSONEncoder().encode(projectToSave)
             let fileURL = projectsDirectory.appendingPathComponent("\(projectToSave.id.uuidString).json")
             try data.write(to: fileURL)
+            
+            DispatchQueue.main.async {
+                if let index = self.projects.firstIndex(where: { $0.id == projectToSave.id }) {
+                    self.projects[index] = projectToSave
+                } else {
+                    self.projects.append(projectToSave)
+                }
+                self.projects.sort { $0.lastModified > $1.lastModified }
+            }
         } catch {
             print("Failed to save project: \(error)")
         }

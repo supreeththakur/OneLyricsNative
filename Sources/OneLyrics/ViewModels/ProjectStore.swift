@@ -14,6 +14,16 @@ class ProjectStore: ObservableObject {
     @Published var waveformData: [Float] = []
     @Published var thumbnails: [(time: Double, image: NSImage)] = []
     
+    var undoManager: UndoManager?
+    
+    func registerUndo(oldState: ProjectState) {
+        undoManager?.registerUndo(withTarget: self) { target in
+            let currentState = target.state
+            target.registerUndo(oldState: currentState)
+            target.state = oldState
+        }
+    }
+    
     var player: AVPlayer?
     var bgPlayer: AVPlayer? // Player for video backgrounds
     var timeObserver: Any?
@@ -141,25 +151,53 @@ class ProjectStore: ObservableObject {
     }
     
     func addLyric(_ lyric: LyricBlock) {
+        let oldState = self.state
         state.lyrics.append(lyric)
         state.lyrics.sort { $0.startMs < $1.startMs }
+        registerUndo(oldState: oldState)
+    }
+    
+    func updateLyric(id: UUID, newStartMs: Double, newEndMs: Double) {
+        let oldState = self.state
+        if let index = state.lyrics.firstIndex(where: { $0.id == id }) {
+            state.lyrics[index].startMs = max(0, newStartMs)
+            state.lyrics[index].endMs = max(0, newEndMs)
+            state.lyrics.sort { $0.startMs < $1.startMs }
+            registerUndo(oldState: oldState)
+        }
+    }
+    
+    func updateLyricText(id: UUID, newText: String) {
+        let oldState = self.state
+        if let index = state.lyrics.firstIndex(where: { $0.id == id }) {
+            if state.lyrics[index].text != newText {
+                state.lyrics[index].text = newText
+                registerUndo(oldState: oldState)
+            }
+        }
     }
     
     func removeLyric(id: UUID) {
+        let oldState = self.state
         state.lyrics.removeAll { $0.id == id }
+        registerUndo(oldState: oldState)
     }
     
     func clearLyrics() {
+        let oldState = self.state
         state.lyrics.removeAll()
+        registerUndo(oldState: oldState)
     }
     
     func shiftAllLyrics(by ms: Double) {
+        let oldState = self.state
         state.lyrics = state.lyrics.map { lyric in
             var updated = lyric
             updated.startMs = max(0, updated.startMs + ms)
             updated.endMs = max(0, updated.endMs + ms)
             return updated
         }
+        registerUndo(oldState: oldState)
     }
     
     func togglePlayPause() {

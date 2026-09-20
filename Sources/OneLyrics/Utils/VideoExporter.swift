@@ -4,6 +4,7 @@ import AppKit
 import CoreGraphics
 import CoreImage
 import SwiftUI
+import VideoToolbox
 
 class VideoExporter: ObservableObject {
     @Published var progress: Double = 0
@@ -51,24 +52,12 @@ class VideoExporter: ObservableObject {
         
         // Snapshot data from main thread before background execution
         var bgCGImage: CGImage? = nil
-        var bgImageGenerator: AVAssetImageGenerator? = nil
-        var bgVideoDurationSec: Double = 0
+        var bgVideoReader: VideoFrameReader? = nil
         
         if let bgURL = store.state.backgroundURL {
             let ext = bgURL.pathExtension.lowercased()
             if ext == "mp4" || ext == "mov" {
-                let asset = AVURLAsset(url: bgURL)
-                let generator = AVAssetImageGenerator(asset: asset)
-                generator.appliesPreferredTrackTransform = true
-                generator.requestedTimeToleranceBefore = .zero
-                generator.requestedTimeToleranceAfter = .zero
-                generator.maximumSize = CGSize(width: width, height: height)
-                bgImageGenerator = generator
-                
-                let duration = CMTimeGetSeconds(asset.duration)
-                if !duration.isNaN && duration > 0 {
-                    bgVideoDurationSec = duration
-                }
+                bgVideoReader = VideoFrameReader(url: bgURL, width: width, height: height)
             } else if let nsImg = NSImage(contentsOf: bgURL) {
                 bgCGImage = nsImg.cgImage(forProposedRect: nil, context: nil, hints: nil)
             }
@@ -114,6 +103,11 @@ class VideoExporter: ObservableObject {
                     AVVideoCodecKey: codec,
                     AVVideoWidthKey: width,
                     AVVideoHeightKey: height,
+                    AVVideoColorPropertiesKey: [
+                        AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                        AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                        AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+                    ]
                 ]
                 if format != "MOV" {
                     videoSettings[AVVideoCompressionPropertiesKey] = [
@@ -128,6 +122,8 @@ class VideoExporter: ObservableObject {
                     kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                     kCVPixelBufferWidthKey as String: width,
                     kCVPixelBufferHeightKey as String: height,
+                    kCVPixelBufferCGImageCompatibilityKey as String: true,
+                    kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
                 ]
                 
                 let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -209,9 +205,9 @@ class VideoExporter: ObservableObject {
                     }
                 }
                 
-                // Color configuration: sRGB color space + Little-Endian PremultipliedFirst
+                // Color configuration: BT.709 color space + Little-Endian PremultipliedFirst
                 // This ensures kCVPixelFormatType_32BGRA bytes in memory are [B, G, R, A] matching little-endian ARGB
-                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+                let colorSpace = CGColorSpace(name: CGColorSpace.itur_709) ?? CGColorSpaceCreateDeviceRGB()
                 let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
                     .union(.byteOrder32Little)
                 
@@ -230,6 +226,7 @@ class VideoExporter: ObservableObject {
                     
                     let currentMs = Double(frameIndex) / Double(fps) * 1000.0
                     
+                    autoreleasepool {
                     // Create pixel buffer
                     var pixelBuffer: CVPixelBuffer?
                     if let pool = adaptor.pixelBufferPool {
@@ -245,11 +242,16 @@ class VideoExporter: ObservableObject {
                             &pixelBuffer
                         )
                         if status != kCVReturnSuccess {
-                            continue
+                            return
                         }
                     }
                     
-                    guard let buffer = pixelBuffer else { continue }
+                    guard let buffer = pixelBuffer else { return }
+                    
+                    CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, colorSpace, .shouldPropagate)
+                    CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
+                    CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
+                    CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
                     
                     CVPixelBufferLockBaseAddress(buffer, [])
                     
@@ -263,7 +265,7 @@ class VideoExporter: ObservableObject {
                         bitmapInfo: bitmapInfo.rawValue
                     ) else {
                         CVPixelBufferUnlockBaseAddress(buffer, [])
-                        continue
+                        return
                     }
                     
                     // 1. Black background fill
@@ -271,12 +273,11 @@ class VideoExporter: ObservableObject {
                     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
                     
                     // 2. Background image or video frame
-                    if let generator = bgImageGenerator {
-                        let timeSec = currentMs / 1000.0
-                        let loopTime = bgVideoDurationSec > 0 ? fmod(timeSec, bgVideoDurationSec) : timeSec
-                        let cmTime = CMTime(seconds: loopTime, preferredTimescale: 600)
-                        if let frame = try? generator.copyCGImage(at: cmTime, actualTime: nil) {
-                            lastRenderedBgFrame = frame
+                    if let reader = bgVideoReader, let pb = reader.nextFrame() {
+                        var cgImg: CGImage?
+                        VTCreateCGImageFromCVPixelBuffer(pb, options: nil, imageOut: &cgImg)
+                        if let img = cgImg {
+                            lastRenderedBgFrame = img
                         }
                     }
                     
@@ -491,6 +492,7 @@ class VideoExporter: ObservableObject {
                     if !adaptor.append(buffer, withPresentationTime: presentationTime) {
                         print("Failed to append frame \(frameIndex): \(writer.error?.localizedDescription ?? "unknown")")
                     }
+                    } // end autoreleasepool
                     
                     // Update progress (scale to 0.0 - 0.95 during video render)
                     if frameIndex % max(1, totalFrames / 100) == 0 {
@@ -529,5 +531,63 @@ class VideoExporter: ObservableObject {
                 }
             }
         }
+    }
+}
+
+class VideoFrameReader {
+    let url: URL
+    let width: Int
+    let height: Int
+    private var asset: AVURLAsset
+    private var reader: AVAssetReader?
+    private var output: AVAssetReaderTrackOutput?
+    
+    init(url: URL, width: Int, height: Int) {
+        self.url = url
+        self.width = width
+        self.height = height
+        self.asset = AVURLAsset(url: url)
+        setupReader()
+    }
+    
+    private func setupReader() {
+        guard let track = asset.tracks(withMediaType: .video).first else { return }
+        do {
+            let newReader = try AVAssetReader(asset: asset)
+            let settings: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height
+            ]
+            let newOutput = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
+            newOutput.alwaysCopiesSampleData = false
+            if newReader.canAdd(newOutput) {
+                newReader.add(newOutput)
+                newReader.startReading()
+                self.reader = newReader
+                self.output = newOutput
+            }
+        } catch {
+            print("Failed to setup video reader: \(error)")
+        }
+    }
+    
+    func nextFrame() -> CVPixelBuffer? {
+        guard let output = output, let reader = reader else { return nil }
+        
+        if let sampleBuffer = output.copyNextSampleBuffer(),
+           let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            return pixelBuffer
+        } else {
+            // Reached end, loop
+            reader.cancelReading()
+            setupReader()
+            
+            if let sampleBuffer = self.output?.copyNextSampleBuffer(),
+               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                return pixelBuffer
+            }
+        }
+        return nil
     }
 }

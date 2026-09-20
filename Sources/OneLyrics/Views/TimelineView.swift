@@ -27,6 +27,57 @@ struct TimelineView: View {
                     }
                     .buttonStyle(.plain)
                     
+                    Button(action: {
+                        let newLyric = LyricBlock(text: "New Lyric", startMs: store.currentTimeMs, endMs: store.currentTimeMs + 2000)
+                        store.addLyric(newLyric)
+                    }) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Add Text")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.blue.opacity(0.2))
+                        .foregroundColor(.blue)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Divider().frame(height: 16).background(Color.gray.opacity(0.5)).padding(.horizontal, 8)
+                    
+                    Button(action: {
+                        store.undoManager?.undo()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.uturn.backward")
+                            Text("Undo")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.1))
+                        .foregroundColor(.white)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button(action: {
+                        store.undoManager?.redo()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.uturn.forward")
+                            Text("Redo")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.1))
+                        .foregroundColor(.white)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    
                     Spacer()
                     
                     HStack {
@@ -222,26 +273,108 @@ struct LyricBlockView: View {
     let durationMs: Double
     
     @State private var isHovered = false
+    @State private var localStartMs: Double? = nil
+    @State private var localEndMs: Double? = nil
+    @State private var isHoveringLeft = false
+    @State private var isHoveringRight = false
     
     var body: some View {
-        let startPercent = durationMs > 0 ? lyric.startMs / durationMs : 0
-        let durationPercent = durationMs > 0 ? (lyric.endMs - lyric.startMs) / durationMs : 0
+        let activeStart = localStartMs ?? lyric.startMs
+        let activeEnd = localEndMs ?? lyric.endMs
+        let startPercent = durationMs > 0 ? activeStart / durationMs : 0
+        let durationPercent = durationMs > 0 ? (activeEnd - activeStart) / durationMs : 0
         let x = startPercent * totalWidth
         let w = max(20, durationPercent * totalWidth) // Minimum 20px width so blocks are always visible
         
         ZStack(alignment: .topTrailing) {
-            Text(lyric.text)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .padding(.horizontal, 6)
-                .frame(width: w, height: 32, alignment: .leading)
-                .background(Color.blue.opacity(0.3))
-                .foregroundColor(.white)
-                .cornerRadius(4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.blue.opacity(0.8), lineWidth: 1)
-                )
+            ZStack {
+                Text(lyric.text)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .frame(width: w, height: 32, alignment: .leading)
+                    .background(Color.blue.opacity(0.3))
+                    .foregroundColor(.white)
+                    .cornerRadius(4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.blue.opacity(0.8), lineWidth: 1)
+                    )
+                    .gesture( // Center drag (move)
+                        DragGesture()
+                            .onChanged { value in
+                                let deltaMs = (value.translation.width / totalWidth) * durationMs
+                                localStartMs = max(0, lyric.startMs + deltaMs)
+                                localEndMs = max(0, lyric.endMs + deltaMs)
+                            }
+                            .onEnded { value in
+                                if let s = localStartMs, let e = localEndMs {
+                                    store.updateLyric(id: lyric.id, newStartMs: s, newEndMs: e)
+                                }
+                                localStartMs = nil
+                                localEndMs = nil
+                            }
+                    )
+                
+                HStack(spacing: 0) {
+                    // Left resize handle
+                    Rectangle()
+                        .fill(isHoveringLeft ? Color.yellow.opacity(0.8) : Color.black.opacity(0.01))
+                        .frame(width: 12, height: 32)
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            isHoveringLeft = hovering
+                            if hovering {
+                                NSCursor.resizeLeftRight.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    let deltaMs = (value.translation.width / totalWidth) * durationMs
+                                    localStartMs = min((localEndMs ?? lyric.endMs) - 100, lyric.startMs + deltaMs)
+                                }
+                                .onEnded { value in
+                                    if let newStart = localStartMs {
+                                        store.updateLyric(id: lyric.id, newStartMs: newStart, newEndMs: activeEnd)
+                                    }
+                                    localStartMs = nil
+                                }
+                        )
+                    
+                    Spacer()
+                    
+                    // Right resize handle
+                    Rectangle()
+                        .fill(isHoveringRight ? Color.yellow.opacity(0.8) : Color.black.opacity(0.01))
+                        .frame(width: 12, height: 32)
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            isHoveringRight = hovering
+                            if hovering {
+                                NSCursor.resizeLeftRight.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    let deltaMs = (value.translation.width / totalWidth) * durationMs
+                                    localEndMs = max((localStartMs ?? lyric.startMs) + 100, lyric.endMs + deltaMs)
+                                }
+                                .onEnded { value in
+                                    if let newEnd = localEndMs {
+                                        store.updateLyric(id: lyric.id, newStartMs: activeStart, newEndMs: newEnd)
+                                    }
+                                    localEndMs = nil
+                                }
+                        )
+                }
+                .frame(width: w, height: 32)
+            }
             
             if isHovered {
                 Button(action: { store.removeLyric(id: lyric.id) }) {
@@ -253,7 +386,7 @@ struct LyricBlockView: View {
                 .offset(x: 6, y: -6)
             }
         }
-        .position(x: x + w/2, y: 60) // center within 120px lyrics track area
+        .offset(x: x, y: 44) // center within 120px lyrics track area (60 - 32/2)
         .onHover { hovering in
             isHovered = hovering
         }

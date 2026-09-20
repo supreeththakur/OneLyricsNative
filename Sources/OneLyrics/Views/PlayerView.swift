@@ -3,6 +3,9 @@ import AVKit
 
 struct PlayerView: View {
     @EnvironmentObject var store: ProjectStore
+    @State private var editingLyricId: UUID? = nil
+    @State private var editingText: String = ""
+    @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
         ZStack {
@@ -128,25 +131,60 @@ struct PlayerView: View {
                         let textColor = NSColor(Color(hex: store.state.typography.color))
                         let strokeColor = NSColor(Color(hex: store.state.typography.strokeColor))
                         
-                        NativeStrokeText(
-                            text: displayText,
-                            fontName: store.state.typography.fontFamily,
-                            fontSize: scaledFontSize,
-                            textColor: textColor,
-                            strokeColor: strokeColor,
-                            strokeWidth: store.state.typography.hasStroke ? CGFloat(store.state.typography.strokeWidth) : 0,
-                            isLeading: isLeading
-                        )
-                        .shadow(color: .black.opacity(0.8), radius: scaledGlow)
-                        .opacity(opacity)
-                        .scaleEffect(scale)
-                        .offset(x: xOffset, y: yOffset)
-                        .blur(radius: blurRadius)
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: isLeading ? .leading : .center)
-                        .padding(.horizontal, isLeading ? 80 * (w/1920) : 0)
-                        .padding(.bottom, store.state.typography.alignment == .bottom ? 40 * (w/1920) : 0)
-                        .padding(.top, store.state.typography.alignment == .top ? 40 * (w/1920) : 0)
+                        if editingLyricId == currentLyric.id {
+                            TextField("Lyric Text", text: $editingText, onCommit: {
+                                store.updateLyricText(id: currentLyric.id, newText: editingText)
+                                editingLyricId = nil
+                            })
+                            .focused($isTextFieldFocused)
+                            .onChange(of: isTextFieldFocused) { _, isFocused in
+                                if !isFocused && editingLyricId == currentLyric.id {
+                                    store.updateLyricText(id: currentLyric.id, newText: editingText)
+                                    editingLyricId = nil
+                                }
+                            }
+                            .textFieldStyle(.plain)
+                            .font(Font.custom(store.state.typography.fontFamily, size: scaledFontSize))
+                            .foregroundColor(Color(nsColor: textColor))
+                            .multilineTextAlignment(isLeading ? .leading : .center)
+                            .shadow(color: .black.opacity(0.8), radius: scaledGlow)
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: isLeading ? .leading : .center)
+                            .padding(.horizontal, isLeading ? 80 * (w/1920) : 0)
+                            .padding(.bottom, store.state.typography.alignment == .bottom ? 40 * (w/1920) : 0)
+                            .padding(.top, store.state.typography.alignment == .top ? 40 * (w/1920) : 0)
+                            .onAppear {
+                                isTextFieldFocused = true
+                            }
+                        } else {
+                            NativeStrokeText(
+                                text: displayText,
+                                fontName: store.state.typography.fontFamily,
+                                fontSize: scaledFontSize,
+                                textColor: textColor,
+                                strokeColor: strokeColor,
+                                strokeWidth: store.state.typography.hasStroke ? CGFloat(store.state.typography.strokeWidth) : 0,
+                                isLeading: isLeading
+                            )
+                            .shadow(color: .black.opacity(0.8), radius: scaledGlow)
+                            .opacity(opacity)
+                            .scaleEffect(scale)
+                            .offset(x: xOffset, y: yOffset)
+                            .blur(radius: blurRadius)
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: isLeading ? .leading : .center)
+                            .padding(.horizontal, isLeading ? 80 * (w/1920) : 0)
+                            .padding(.bottom, store.state.typography.alignment == .bottom ? 40 * (w/1920) : 0)
+                            .padding(.top, store.state.typography.alignment == .top ? 40 * (w/1920) : 0)
+                            .contentShape(Rectangle())
+                            .onTapGesture(count: 2) {
+                                editingLyricId = currentLyric.id
+                                editingText = currentLyric.text
+                                if store.isPlaying {
+                                    store.togglePlayPause()
+                                }
+                            }
+                        }
                     }
                     
                     if store.state.typography.alignment == .top {

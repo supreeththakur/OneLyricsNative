@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import AppKit
+import Combine
 
 @main
 struct OneLyricsNativeApp: App {
@@ -58,6 +59,8 @@ struct ProjectEditorWrapper: View {
         self.onBack = onBack
     }
     
+    @Environment(\.undoManager) var undoManager
+    
     var body: some View {
         ContentView(onBack: {
             projectManager.saveProject(store.state)
@@ -68,13 +71,14 @@ struct ProjectEditorWrapper: View {
         .frame(minWidth: 1000, minHeight: 700)
         .onAppear {
             NSApplication.shared.activate(ignoringOtherApps: true)
+            store.undoManager = undoManager
         }
         .onReceive(NotificationCenter.default.publisher(for: .spacebarPressed)) { _ in
             store.togglePlayPause()
         }
-        .onChange(of: store.state.title) { _ in projectManager.saveProject(store.state) }
-        // We could observe other changes, but saving on back is explicitly implemented.
-        // Also save periodically or on specific actions if needed.
+        .onReceive(store.$state.debounce(for: 1.0, scheduler: RunLoop.main)) { newState in
+            projectManager.saveProject(newState)
+        }
     }
 }
 

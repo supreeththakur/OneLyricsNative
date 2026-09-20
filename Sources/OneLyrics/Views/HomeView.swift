@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct HomeView: View {
     @ObservedObject var projectManager: ProjectManager
@@ -115,16 +116,8 @@ struct ProjectCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Thumbnail Area (Mocked for now)
-            ZStack {
-                Rectangle()
-                    .fill(Color(white: 0.15))
-                    .aspectRatio(16/9, contentMode: .fit)
-                
-                Image(systemName: "film")
-                    .font(.system(size: 30))
-                    .foregroundColor(Color.white.opacity(0.2))
-            }
+            // Thumbnail Area
+            ProjectThumbnailView(url: project.backgroundURL)
             .overlay(
                 // Play button overlay
                 Image(systemName: "play.circle.fill")

@@ -194,7 +194,9 @@ struct ExportModalView: View {
         .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: 10)
         .onAppear {
             let ext = selectedFormat == "MOV" ? "mov" : "mp4"
-            outputPath = NSHomeDirectory() + "/Desktop/OneLyrics_Export.\(ext)"
+            let sanitizedName = store.state.title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+            let projectName = sanitizedName.isEmpty ? "OneLyrics_Export" : sanitizedName
+            outputPath = NSHomeDirectory() + "/Desktop/\(projectName).\(ext)"
         }
     }
     
@@ -203,7 +205,9 @@ struct ExportModalView: View {
         panel.title = "Save Exported Video"
         panel.allowedContentTypes = [.mpeg4Movie, .movie]
         let ext = selectedFormat == "MOV" ? "mov" : "mp4"
-        panel.nameFieldStringValue = "OneLyrics_Export.\(ext)"
+        let sanitizedName = store.state.title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+        let projectName = sanitizedName.isEmpty ? "OneLyrics_Export" : sanitizedName
+        panel.nameFieldStringValue = "\(projectName).\(ext)"
         
         if panel.runModal() == .OK, let url = panel.url {
             outputPath = url.path
@@ -212,7 +216,9 @@ struct ExportModalView: View {
     
     private func startExport() {
         let ext = selectedFormat == "MOV" ? "mov" : "mp4"
-        let finalPath = outputPath.isEmpty ? NSHomeDirectory() + "/Desktop/OneLyrics_Export.\(ext)" : outputPath
+        let sanitizedName = store.state.title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+        let projectName = sanitizedName.isEmpty ? "OneLyrics_Export" : sanitizedName
+        let finalPath = outputPath.isEmpty ? NSHomeDirectory() + "/Desktop/\(projectName).\(ext)" : outputPath
         
         // Ensure extension matches format
         var url = URL(fileURLWithPath: finalPath)
