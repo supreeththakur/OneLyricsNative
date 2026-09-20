@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct AssetSidebar: View {
     @EnvironmentObject var store: ProjectStore
+    @Binding var showSearchModal: Bool
     
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -55,6 +56,20 @@ struct AssetSidebar: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(store.isConvertingAudio)
+                
+                Button(action: { showSearchModal = true }) {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                        Text("Search Online")
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.blue.opacity(0.15))
+                    .foregroundColor(.blue)
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
             }
             
             // Background Section
@@ -89,6 +104,19 @@ struct AssetSidebar: View {
                         }
                     }
                     .frame(height: 80)
+                    
+                    Button(action: { store.isShowingBackgroundFetch = true }) {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                            Text("Search Online")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.blue.opacity(0.15))
+                        .foregroundColor(.blue)
+                        .cornerRadius(8)
+                    }
                 }
                 .buttonStyle(.plain)
             }
@@ -272,6 +300,32 @@ struct InspectorSidebar: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Offset X: \(Int(store.state.mediaConfig.cropOffsetX))").font(.caption2).foregroundColor(.gray)
+                                Spacer()
+                                Button("Reset") { store.state.mediaConfig.cropOffsetX = 0 }
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.blue)
+                                    .buttonStyle(.plain)
+                            }
+                            Slider(value: $store.state.mediaConfig.cropOffsetX, in: -500...500)
+                                .tint(.blue)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Offset Y: \(Int(store.state.mediaConfig.cropOffsetY))").font(.caption2).foregroundColor(.gray)
+                                Spacer()
+                                Button("Reset") { store.state.mediaConfig.cropOffsetY = 0 }
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.blue)
+                                    .buttonStyle(.plain)
+                            }
+                            Slider(value: $store.state.mediaConfig.cropOffsetY, in: -500...500)
+                                .tint(.blue)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("Brightness: \(String(format: "%.2f", store.state.mediaConfig.brightness))").font(.caption2).foregroundColor(.gray)
                             Slider(value: $store.state.mediaConfig.brightness, in: -1.0...1.0)
                                 .tint(.blue)
@@ -392,6 +446,19 @@ struct InspectorSidebar: View {
                                 Text("Glow Intensity: \(Int(store.state.typography.glow))px").font(.caption2).foregroundColor(.gray)
                                 Slider(value: $store.state.typography.glow, in: 0...100)
                                     .tint(.purple)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Glow Color").font(.caption2).foregroundColor(.gray)
+                                ColorPicker("", selection: Binding(
+                                    get: { Color(hex: store.state.typography.glowColor ?? "#000000") },
+                                    set: { newColor in 
+                                        if let hex = newColor.toHex() {
+                                            store.state.typography.glowColor = "#\(hex)"
+                                        }
+                                    }
+                                ))
+                                .labelsHidden()
                             }
                             
                             VStack(alignment: .leading, spacing: 4) {

@@ -13,7 +13,7 @@ struct TimelineView: View {
             VStack(spacing: 0) {
                 // Toolbar
                 HStack {
-                    Button(action: { /* Auto Sync Logic */ }) {
+                    Button(action: { store.isShowingLyricsFetch = true }) {
                         HStack {
                             Image(systemName: "wand.and.stars")
                             Text("AI Sync (Auto)")

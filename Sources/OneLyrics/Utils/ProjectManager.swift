@@ -41,7 +41,7 @@ class ProjectManager: ObservableObject {
     
     private func uniqueTitle(for title: String, ignoringId: UUID? = nil) -> String {
         var newTitle = title
-        var counter = 2
+        var counter = 1
         
         while projects.contains(where: { $0.title.lowercased() == newTitle.lowercased() && $0.id != ignoringId }) {
             newTitle = "\(title) \(counter)"

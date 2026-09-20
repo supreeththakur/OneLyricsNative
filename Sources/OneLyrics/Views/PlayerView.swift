@@ -35,6 +35,10 @@ struct PlayerView: View {
                         }
                     }
                     .scaleEffect(store.state.mediaConfig.cropScale)
+                    .offset(
+                        x: store.state.mediaConfig.cropOffsetX,
+                        y: store.state.mediaConfig.cropOffsetY
+                    )
                     .brightness(store.state.mediaConfig.brightness)
                     .contrast(store.state.mediaConfig.contrast)
                     .saturation(store.state.mediaConfig.saturation)
@@ -131,6 +135,8 @@ struct PlayerView: View {
                         let textColor = NSColor(Color(hex: store.state.typography.color))
                         let strokeColor = NSColor(Color(hex: store.state.typography.strokeColor))
                         
+                        let glowColorObj = Color(hex: store.state.typography.glowColor ?? "#000000")
+                        
                         if editingLyricId == currentLyric.id {
                             TextField("Lyric Text", text: $editingText, onCommit: {
                                 store.updateLyricText(id: currentLyric.id, newText: editingText)
@@ -147,7 +153,7 @@ struct PlayerView: View {
                             .font(Font.custom(store.state.typography.fontFamily, size: scaledFontSize))
                             .foregroundColor(Color(nsColor: textColor))
                             .multilineTextAlignment(isLeading ? .leading : .center)
-                            .shadow(color: .black.opacity(0.8), radius: scaledGlow)
+                            .shadow(color: glowColorObj.opacity(0.8), radius: scaledGlow)
                             .padding()
                             .frame(maxWidth: .infinity, alignment: isLeading ? .leading : .center)
                             .padding(.horizontal, isLeading ? 80 * (w/1920) : 0)
@@ -166,7 +172,7 @@ struct PlayerView: View {
                                 strokeWidth: store.state.typography.hasStroke ? CGFloat(store.state.typography.strokeWidth) : 0,
                                 isLeading: isLeading
                             )
-                            .shadow(color: .black.opacity(0.8), radius: scaledGlow)
+                            .shadow(color: glowColorObj.opacity(0.8), radius: scaledGlow)
                             .opacity(opacity)
                             .scaleEffect(scale)
                             .offset(x: xOffset, y: yOffset)
@@ -258,8 +264,7 @@ struct PlayerView: View {
         let totalSeconds = Int(ms / 1000)
         let m = totalSeconds / 60
         let s = totalSeconds % 60
-        let frames = Int((ms.truncatingRemainder(dividingBy: 1000)) / (1000/30))
-        return String(format: "%02d:%02d:%02d", m, s, frames)
+        return String(format: "%02d:%02d", m, s)
     }
 }
 

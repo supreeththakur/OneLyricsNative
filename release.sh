@@ -25,9 +25,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>CFBundleIconFile</key>
@@ -72,9 +72,10 @@ hdiutil create -volname "OneLyrics" -srcfolder "$DMG_ROOT" -ov -format UDZO OneL
 echo "Uploading DMG to GitHub..."
 export PATH="/usr/bin:$PATH"
 
-# Delete the old zip from release if it exists
-gh release upload v1.0.0 OneLyrics.dmg --clobber
-gh release delete-asset v1.0.0 OneLyricsNative.dmg -y || true
-gh release delete-asset v1.0.0 OneLyricsNative-macOS.zip -y || true
+# Create release if it doesn't exist
+gh release create v1.1.0 -t "v1.1.0" -n "v1.1 Release" || true
+
+# Upload the dmg
+gh release upload v1.1.0 OneLyrics.dmg --clobber
 
 echo "Done!"

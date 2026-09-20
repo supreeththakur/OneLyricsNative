@@ -4,7 +4,6 @@ import AppKit
 import CoreGraphics
 import CoreImage
 import SwiftUI
-import VideoToolbox
 
 class VideoExporter: ObservableObject {
     @Published var progress: Double = 0
@@ -102,12 +101,7 @@ class VideoExporter: ObservableObject {
                 var videoSettings: [String: Any] = [
                     AVVideoCodecKey: codec,
                     AVVideoWidthKey: width,
-                    AVVideoHeightKey: height,
-                    AVVideoColorPropertiesKey: [
-                        AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-                        AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-                        AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
-                    ]
+                    AVVideoHeightKey: height
                 ]
                 if format != "MOV" {
                     videoSettings[AVVideoCompressionPropertiesKey] = [
@@ -205,14 +199,19 @@ class VideoExporter: ObservableObject {
                     }
                 }
                 
-                // Color configuration: BT.709 color space + Little-Endian PremultipliedFirst
-                // This ensures kCVPixelFormatType_32BGRA bytes in memory are [B, G, R, A] matching little-endian ARGB
-                let colorSpace = CGColorSpace(name: CGColorSpace.itur_709) ?? CGColorSpaceCreateDeviceRGB()
+                // Use sRGB for CGContext rendering - this is the standard color space for screen-accurate colors.
+                // sRGB and BT.709 share the same color primaries, but sRGB uses the correct transfer function
+                // for CoreGraphics rendering. This prevents the double-gamma issue that causes washed-out colors.
+                let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
                 let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
                     .union(.byteOrder32Little)
                 
                 var lastRenderedBgFrame: CGImage? = bgCGImage
-                let ciContext = CIContext(options: [CIContextOption.useSoftwareRenderer: false])
+                let ciContext = CIContext(options: [
+                    CIContextOption.useSoftwareRenderer: false,
+                    CIContextOption.outputColorSpace: colorSpace,
+                    CIContextOption.workingColorSpace: colorSpace
+                ])
                 let mediaConfig = store.state.mediaConfig
                 
                 // Render all video frames
@@ -248,10 +247,8 @@ class VideoExporter: ObservableObject {
                     
                     guard let buffer = pixelBuffer else { return }
                     
+                    // Attach sRGB color space to pixel buffer so the encoder knows the pixel data is sRGB
                     CVBufferSetAttachment(buffer, kCVImageBufferCGColorSpaceKey, colorSpace, .shouldPropagate)
-                    CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
-                    CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
-                    CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
                     
                     CVPixelBufferLockBaseAddress(buffer, [])
                     
@@ -274,10 +271,10 @@ class VideoExporter: ObservableObject {
                     
                     // 2. Background image or video frame
                     if let reader = bgVideoReader, let pb = reader.nextFrame() {
-                        var cgImg: CGImage?
-                        VTCreateCGImageFromCVPixelBuffer(pb, options: nil, imageOut: &cgImg)
-                        if let img = cgImg {
-                            lastRenderedBgFrame = img
+                        // Use CIContext for color-managed conversion to sRGB
+                        let ciImg = CIImage(cvPixelBuffer: pb)
+                        if let cgImg = ciContext.createCGImage(ciImg, from: ciImg.extent) {
+                            lastRenderedBgFrame = cgImg
                         }
                     }
                     
@@ -308,14 +305,18 @@ class VideoExporter: ObservableObject {
                         let canvasW = CGFloat(width)
                         let canvasH = CGFloat(height)
                         
-                        // Apply cropScale
+                        // Apply cropScale + offset
                         let baseScale = max(canvasW / imgW, canvasH / imgH)
                         let scale = baseScale * CGFloat(mediaConfig.cropScale)
                         
+                        // Scale offset proportionally (offset values are in preview-space ~1920x1080)
+                        let offsetX = CGFloat(mediaConfig.cropOffsetX) * canvasW / 1920.0
+                        let offsetY = CGFloat(mediaConfig.cropOffsetY) * canvasH / 1080.0
+                        
                         let drawW = imgW * scale
                         let drawH = imgH * scale
-                        let drawX = (canvasW - drawW) / 2
-                        let drawY = (canvasH - drawH) / 2
+                        let drawX = (canvasW - drawW) / 2 + offsetX
+                        let drawY = (canvasH - drawH) / 2 - offsetY // CGContext Y is flipped
                         context.draw(finalCGImage, in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
                     }
                     
@@ -406,13 +407,20 @@ class VideoExporter: ObservableObject {
                         
                         let nsColor = NSColor(red: textR, green: textG, blue: textB, alpha: textAlpha)
                         
+                        let hexGlow = typography.glowColor?.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "") ?? "000000"
+                        var gRgb: UInt64 = 0
+                        Scanner(string: hexGlow).scanHexInt64(&gRgb)
+                        let glowR = CGFloat((gRgb & 0xFF0000) >> 16) / 255.0
+                        let glowG = CGFloat((gRgb & 0x00FF00) >> 8) / 255.0
+                        let glowB = CGFloat(gRgb & 0x0000FF) / 255.0
+                        
                         let shadow = NSShadow()
                         if anim == .blurFade && blurRadius > 0 {
                             let blurProgress = CGFloat(1.0 - min(progressIn, progressOut))
                             shadow.shadowColor = NSColor(red: textR, green: textG, blue: textB, alpha: opacity * blurProgress)
                             shadow.shadowBlurRadius = (typography.glow * CGFloat(width) / 1920.0) + blurRadius
                         } else if typography.glow > 0 {
-                            shadow.shadowColor = NSColor.black.withAlphaComponent(0.9 * opacity)
+                            shadow.shadowColor = NSColor(red: glowR, green: glowG, blue: glowB, alpha: 0.9 * opacity)
                             shadow.shadowBlurRadius = typography.glow * CGFloat(width) / 1920.0
                             shadow.shadowOffset = NSSize(width: 0, height: -2)
                         }

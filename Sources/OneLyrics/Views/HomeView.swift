@@ -76,11 +76,10 @@ struct HomeView: View {
             TextField("Project Name", text: $newProjectTitle)
             Button("Cancel", role: .cancel) { }
             Button("Create") {
-                let title = newProjectTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !title.isEmpty {
-                    let project = projectManager.createProject(title: title)
-                    onSelect(project)
-                }
+                let input = newProjectTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = input.isEmpty ? "New Project" : input
+                let project = projectManager.createProject(title: title)
+                onSelect(project)
             }
         }
         .alert("Rename Project", isPresented: Binding(

@@ -9,6 +9,9 @@ class ProjectStore: ObservableObject {
     @Published var currentTimeMs: Double = 0
     @Published var timelineZoom: CGFloat = 1.0
     @Published var isConvertingAudio: Bool = false
+    @Published var isShowingLyricsFetch: Bool = false
+    @Published var isShowingBackgroundFetch: Bool = false
+    @Published var isShowingThumbnailMaker: Bool = false
     
     // New states for Timeline Tracks
     @Published var waveformData: [Float] = []
@@ -67,9 +70,9 @@ class ProjectStore: ObservableObject {
         }
     }
     
-    func importAndConvertAudio(url: URL) {
+    func importAndConvertAudio(url: URL, forceConvert: Bool = false) {
         let ext = url.pathExtension.lowercased()
-        if ext == "m4a" || ext == "wav" || ext == "aiff" {
+        if !forceConvert && (ext == "m4a" || ext == "wav" || ext == "aiff") {
             setAudio(url: url)
             return
         }
@@ -148,6 +151,13 @@ class ProjectStore: ObservableObject {
                 bgEndObserver = nil
             }
         }
+    }
+    
+    func applySyncedLyrics(_ blocks: [LyricBlock]) {
+        let oldState = self.state
+        self.registerUndo(oldState: oldState)
+        
+        self.state.lyrics = blocks
     }
     
     func addLyric(_ lyric: LyricBlock) {

@@ -33,6 +33,7 @@ struct TypographyConfig: Codable {
     var fontSize: CGFloat = 150
     var color: String = "#ffffff" // Hex
     var glow: CGFloat = 20
+    var glowColor: String?
     var hasStroke: Bool = false
     var strokeWidth: CGFloat = 3.0
     var strokeColor: String = "#000000"
@@ -47,6 +48,22 @@ struct MediaConfig: Codable {
     var contrast: Double = 1.0
     var saturation: Double = 1.0
     var cropScale: Double = 1.0
+    var cropOffsetX: Double = 0.0
+    var cropOffsetY: Double = 0.0
+    
+    init() {}
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        volume = try container.decodeIfPresent(Float.self, forKey: .volume) ?? 1.0
+        bgVolume = try container.decodeIfPresent(Float.self, forKey: .bgVolume) ?? 0.0
+        brightness = try container.decodeIfPresent(Double.self, forKey: .brightness) ?? 0.0
+        contrast = try container.decodeIfPresent(Double.self, forKey: .contrast) ?? 1.0
+        saturation = try container.decodeIfPresent(Double.self, forKey: .saturation) ?? 1.0
+        cropScale = try container.decodeIfPresent(Double.self, forKey: .cropScale) ?? 1.0
+        cropOffsetX = try container.decodeIfPresent(Double.self, forKey: .cropOffsetX) ?? 0.0
+        cropOffsetY = try container.decodeIfPresent(Double.self, forKey: .cropOffsetY) ?? 0.0
+    }
 }
 
 struct ProjectState: Codable, Identifiable {
