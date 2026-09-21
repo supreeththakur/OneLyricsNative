@@ -35,8 +35,8 @@ class ProjectManager: ObservableObject {
             print("Failed to load projects: \(error)")
         }
         
-        // Sort by last modified (newest first)
-        self.projects = loadedProjects.sorted { $0.lastModified > $1.lastModified }
+        // Sort by created date (newest first)
+        self.projects = loadedProjects.sorted { $0.createdAt > $1.createdAt }
     }
     
     private func uniqueTitle(for title: String, ignoringId: UUID? = nil) -> String {
@@ -74,7 +74,7 @@ class ProjectManager: ObservableObject {
                 } else {
                     self.projects.append(projectToSave)
                 }
-                self.projects.sort { $0.lastModified > $1.lastModified }
+                self.projects.sort { $0.createdAt > $1.createdAt }
             }
         } catch {
             print("Failed to save project: \(error)")

@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import AVFoundation
+import CoreImage
 
 class ProjectThumbnailExporter {
     
@@ -13,28 +14,24 @@ class ProjectThumbnailExporter {
     static func generateThumbnail(state: ProjectState, textSize: CGFloat, glow: CGFloat, shadowOffset: CGSize, size: CGSize = CGSize(width: 1920, height: 1080)) async -> NSImage? {
         let bounds = CGRect(origin: .zero, size: size)
         
-        let bitmapRep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: Int(size.width),
-            pixelsHigh: Int(size.height),
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .calibratedRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        )
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
         
-        guard let rep = bitmapRep else { return nil }
-        
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            NSGraphicsContext.restoreGraphicsState()
+        guard let context = CGContext(
+            data: nil,
+            width: Int(size.width),
+            height: Int(size.height),
+            bitsPerComponent: 8,
+            bytesPerRow: Int(size.width) * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
             return nil
         }
+        
+        NSGraphicsContext.saveGraphicsState()
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.current = nsContext
         
         // Draw Background
         let cropScale = CGFloat(state.mediaConfig.cropScale)
@@ -58,9 +55,32 @@ class ProjectThumbnailExporter {
             }
             
             if let cgImage = bgImage {
+                var finalCGImage = cgImage
+                
+                if state.mediaConfig.brightness != 0 || state.mediaConfig.contrast != 1.0 || state.mediaConfig.saturation != 1.0 {
+                    let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+                    let ciContext = CIContext(options: [.workingColorSpace: sRGB, .outputColorSpace: sRGB])
+                    let ciImage = CIImage(cgImage: cgImage)
+                    var processedCI = ciImage
+                    
+                    if let filter = CIFilter(name: "CIColorControls") {
+                        filter.setValue(processedCI, forKey: kCIInputImageKey)
+                        filter.setValue(CGFloat(state.mediaConfig.brightness), forKey: kCIInputBrightnessKey)
+                        filter.setValue(CGFloat(state.mediaConfig.contrast), forKey: kCIInputContrastKey)
+                        filter.setValue(CGFloat(state.mediaConfig.saturation), forKey: kCIInputSaturationKey)
+                        if let output = filter.outputImage {
+                            processedCI = output
+                        }
+                    }
+                    
+                    if let rendered = ciContext.createCGImage(processedCI, from: processedCI.extent) {
+                        finalCGImage = rendered
+                    }
+                }
+                
                 // Aspect-fill: scale image to cover the entire canvas, then apply cropScale
-                let imgW = CGFloat(cgImage.width)
-                let imgH = CGFloat(cgImage.height)
+                let imgW = CGFloat(finalCGImage.width)
+                let imgH = CGFloat(finalCGImage.height)
                 let canvasW = size.width
                 let canvasH = size.height
                 
@@ -76,7 +96,7 @@ class ProjectThumbnailExporter {
                 let drawX = (canvasW - drawW) / 2 + offsetX
                 let drawY = (canvasH - drawH) / 2 - offsetY // CGContext Y is flipped
                 
-                context.draw(cgImage, in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
+                context.draw(finalCGImage, in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
             } else {
                 context.setFillColor(NSColor.black.cgColor)
                 context.fill(bounds)
@@ -174,8 +194,7 @@ class ProjectThumbnailExporter {
         context.restoreGState()
         NSGraphicsContext.restoreGraphicsState()
         
-        let image = NSImage(size: size)
-        image.addRepresentation(rep)
-        return image
+        guard let finalImage = context.makeImage() else { return nil }
+        return NSImage(cgImage: finalImage, size: size)
     }
 }

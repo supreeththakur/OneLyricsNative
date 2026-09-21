@@ -14,6 +14,30 @@ struct HomeView: View {
         GridItem(.adaptive(minimum: 200, maximum: 250), spacing: 20)
     ]
     
+    var groupedProjects: [(String, [ProjectState])] {
+        let calendar = Calendar.current
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .none
+        
+        let groups = Dictionary(grouping: projectManager.projects) { project -> String in
+            let date = project.createdAt
+            if calendar.isDateInToday(date) {
+                return "Today"
+            } else if calendar.isDateInYesterday(date) {
+                return "Yesterday"
+            } else {
+                return dateFormatter.string(from: date)
+            }
+        }
+        
+        return groups.sorted { group1, group2 in
+            let date1 = group1.value.first?.createdAt ?? Date.distantPast
+            let date2 = group2.value.first?.createdAt ?? Date.distantPast
+            return date1 > date2
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 30) {
             // Header
@@ -52,18 +76,29 @@ struct HomeView: View {
             // Projects Grid
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 20) {
-                    ForEach(projectManager.projects) { project in
-                        ProjectCard(
-                            project: project,
-                            onSelect: { onSelect(project) },
-                            onRename: {
-                                renamingProjectId = project.id
-                                renamingProjectTitle = project.title
-                            },
-                            onDelete: {
-                                projectManager.deleteProject(id: project.id)
+                    ForEach(groupedProjects, id: \.0) { group in
+                        Section(header: 
+                            Text(group.0)
+                                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 10)
+                                .padding(.bottom, 5)
+                        ) {
+                            ForEach(group.1) { project in
+                                ProjectCard(
+                                    project: project,
+                                    onSelect: { onSelect(project) },
+                                    onRename: {
+                                        renamingProjectId = project.id
+                                        renamingProjectTitle = project.title
+                                    },
+                                    onDelete: {
+                                        projectManager.deleteProject(id: project.id)
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
                 }
                 .padding(.horizontal, 40)

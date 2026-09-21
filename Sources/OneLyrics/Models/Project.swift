@@ -87,6 +87,7 @@ struct MediaConfig: Codable {
 struct ProjectState: Codable, Identifiable {
     var id: UUID = UUID()
     var title: String = "Untitled Project"
+    var createdAt: Date = Date()
     var lastModified: Date = Date()
     var audioURL: URL?
     var backgroundURL: URL?
@@ -103,5 +104,23 @@ struct ProjectState: Codable, Identifiable {
         var conf = TypographyConfig()
         TemplateManager.applyTemplate(defId, to: &conf)
         self.typography = conf
+        self.createdAt = Date()
+        self.lastModified = Date()
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Untitled Project"
+        lastModified = try container.decodeIfPresent(Date.self, forKey: .lastModified) ?? Date()
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? lastModified
+        audioURL = try container.decodeIfPresent(URL.self, forKey: .audioURL)
+        backgroundURL = try container.decodeIfPresent(URL.self, forKey: .backgroundURL)
+        durationMs = try container.decodeIfPresent(Double.self, forKey: .durationMs) ?? 0
+        fps = try container.decodeIfPresent(Double.self, forKey: .fps) ?? 30
+        lyrics = try container.decodeIfPresent([LyricBlock].self, forKey: .lyrics) ?? []
+        templateId = try container.decodeIfPresent(String.self, forKey: .templateId) ?? TemplateManager.defaultTemplate
+        typography = try container.decodeIfPresent(TypographyConfig.self, forKey: .typography) ?? TypographyConfig()
+        mediaConfig = try container.decodeIfPresent(MediaConfig.self, forKey: .mediaConfig) ?? MediaConfig()
     }
 }
