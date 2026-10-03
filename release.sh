@@ -86,7 +86,11 @@ echo "Uploading DMG to GitHub..."
 export PATH="/usr/bin:$PATH"
 
 # Create release if it doesn't exist
-gh release create v${VERSION} -t "v${VERSION}" -n "v${VERSION} Release: UI Polish & Modernization (Resolves #6)" || true
+if [ -f "ReleaseNotes/v${VERSION}.md" ]; then
+    gh release create v${VERSION} -t "v${VERSION}" -F "ReleaseNotes/v${VERSION}.md" || true
+else
+    gh release create v${VERSION} -t "v${VERSION}" -n "v${VERSION} Release" || true
+fi
 
 # Upload the dmgs
 gh release upload v${VERSION} OneLyrics-AppleSilicon.dmg --clobber
