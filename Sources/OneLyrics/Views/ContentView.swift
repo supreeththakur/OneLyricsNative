@@ -32,8 +32,9 @@ struct ContentView: View {
                 // Inspector (Settings)
                 InspectorSidebar()
                     .frame(minWidth: 200, idealWidth: 240, maxWidth: 350)
-                    .background(Color(white: 0.1))
+                    .background(Color(nsColor: .windowBackgroundColor))
             }
+            .background(Color.black)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button(action: {

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-VERSION="1.1.8"
-BUILD="9"
+VERSION="1.1.9"
+BUILD="10"
 
 function build_and_package() {
     ARCH=$1
@@ -86,7 +86,7 @@ echo "Uploading DMG to GitHub..."
 export PATH="/usr/bin:$PATH"
 
 # Create release if it doesn't exist
-gh release create v${VERSION} -t "v${VERSION}" -n "v${VERSION} Release: Search states are now preserved across opens (Resolves #7)" || true
+gh release create v${VERSION} -t "v${VERSION}" -n "v${VERSION} Release: UI Polish & Modernization (Resolves #6)" || true
 
 # Upload the dmgs
 gh release upload v${VERSION} OneLyrics-AppleSilicon.dmg --clobber

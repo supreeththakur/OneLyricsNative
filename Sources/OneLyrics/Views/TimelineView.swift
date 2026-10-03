@@ -19,11 +19,14 @@ struct TimelineView: View {
                             Text("AI Sync (Auto)")
                         }
                         .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.purple.opacity(0.2))
-                        .foregroundColor(.purple)
-                        .cornerRadius(6)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            LinearGradient(colors: [Color.purple, Color.indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                        .shadow(color: Color.purple.opacity(0.3), radius: 3, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
                     
@@ -36,11 +39,12 @@ struct TimelineView: View {
                             Text("Add Text")
                         }
                         .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.blue.opacity(0.2))
-                        .foregroundColor(.blue)
-                        .cornerRadius(6)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.15))
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     
@@ -308,16 +312,23 @@ struct LyricBlockView: View {
         ZStack(alignment: .topTrailing) {
             ZStack {
                 Text(lyric.text)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .lineLimit(1)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 8)
                     .frame(width: w, height: 32, alignment: .leading)
-                    .background(Color.blue.opacity(0.3))
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.blue.opacity(0.6), Color.purple.opacity(0.6)]),
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                     .foregroundColor(.white)
-                    .cornerRadius(4)
+                    .cornerRadius(6)
+                    .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.blue.opacity(0.8), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
                     )
                     .gesture( // Center drag (move)
                         DragGesture()
