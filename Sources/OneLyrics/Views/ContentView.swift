@@ -147,6 +147,12 @@ struct ContentView: View {
         .onDisappear {
             store.pause()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .addTextTemplateRequested)) { notification in
+            if let text = notification.object as? String {
+                let newBlock = LyricBlock(id: UUID(), text: text, startMs: store.currentTimeMs, endMs: store.currentTimeMs + 3000)
+                store.state.lyrics.append(newBlock)
+            }
+        }
     }
 }
 

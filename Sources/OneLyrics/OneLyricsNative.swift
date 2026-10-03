@@ -44,6 +44,16 @@ struct OneLyricsNativeApp: App {
         .windowStyle(HiddenTitleBarWindowStyle())
         .commands {
             CommandGroup(replacing: .newItem) { }
+            
+            CommandMenu("Template") {
+                Menu("Text") {
+                    Button("Create Template") {
+                        showCreateTemplateAlert()
+                    }
+                    Divider()
+                    TextTemplateMenuItems()
+                }
+            }
         }
     }
 }
