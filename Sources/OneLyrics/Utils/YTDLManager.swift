@@ -147,9 +147,12 @@ class YTDLManager: ObservableObject {
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            let tempDir = FileManager.default.temporaryDirectory
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let assetsDir = docs.appendingPathComponent("OneLyrics/Assets", isDirectory: true)
+            try? FileManager.default.createDirectory(at: assetsDir, withIntermediateDirectories: true)
+            
             let outputFileName = "\(id)_\(UUID().uuidString).m4a"
-            let outputURL = tempDir.appendingPathComponent(outputFileName)
+            let outputURL = assetsDir.appendingPathComponent(outputFileName)
             
             let process = Process()
             process.executableURL = executableURL

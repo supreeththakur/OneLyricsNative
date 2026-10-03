@@ -58,6 +58,12 @@ class ProjectStore: ObservableObject {
     }
     
     func setAudio(url: URL) {
+        if !FileManager.default.fileExists(atPath: url.path) {
+            state.audioURL = nil
+            waveformData = []
+            return
+        }
+        
         state.audioURL = url
         setupPlayer(url: url)
         
@@ -96,6 +102,11 @@ class ProjectStore: ObservableObject {
     }
     
     func setBackground(url: URL) {
+        if !FileManager.default.fileExists(atPath: url.path) {
+            state.backgroundURL = nil
+            return
+        }
+        
         state.backgroundURL = url
         let ext = url.pathExtension.lowercased()
         let isVideo = ["mp4", "mov", "m4v"].contains(ext)
