@@ -143,7 +143,7 @@ struct PlayerView: View {
                                 editingLyricId = nil
                             })
                             .focused($isTextFieldFocused)
-                            .onChange(of: isTextFieldFocused) { _, isFocused in
+                            .onChange(of: isTextFieldFocused) { isFocused in
                                 if !isFocused && editingLyricId == currentLyric.id {
                                     store.updateLyricText(id: currentLyric.id, newText: editingText)
                                     editingLyricId = nil
@@ -253,7 +253,7 @@ struct PlayerView: View {
         .onTapGesture(count: 1) {
             store.togglePlayPause()
         }
-        .onChange(of: store.state.mediaConfig.volume) {
+        .onChange(of: store.state.mediaConfig.volume) { _ in
             store.player?.volume = store.state.mediaConfig.volume
         }
     }

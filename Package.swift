@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "OneLyrics",
     platforms: [
-        .macOS(.v14) // Requires macOS 14 Sonoma or later for advanced SwiftUI features
+        .macOS(.v13) // Requires macOS 13 Ventura or later
     ],
     products: [
         .executable(

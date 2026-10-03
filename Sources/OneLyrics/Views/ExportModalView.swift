@@ -205,7 +205,7 @@ struct ExportModalView: View {
             let projectName = sanitizedName.isEmpty ? "OneLyrics_Export" : sanitizedName
             outputPath = NSHomeDirectory() + "/Desktop/\(projectName).\(ext)"
         }
-        .onChange(of: exporter.isExporting) { old, isExporting in
+        .onChange(of: exporter.isExporting) { isExporting in
             if !isExporting, let url = exporter.exportedURL, uploadToYouTube {
                 prepareYouTubeUpload(videoURL: url)
             }
