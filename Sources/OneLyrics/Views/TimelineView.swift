@@ -3,6 +3,7 @@ import AppKit
 
 struct TimelineView: View {
     @EnvironmentObject var store: ProjectStore
+    @ObservedObject var templateManager = TextTemplateManager.shared
     @State private var scrubbingPosition: Double? = nil
     @State private var isScrubbing = false
     @State private var wasPlayingBeforeScrub = false
@@ -48,6 +49,36 @@ struct TimelineView: View {
                     }
                     .buttonStyle(.plain)
                     
+                    Menu {
+                        if templateManager.templates.isEmpty {
+                            Text("No Templates Saved")
+                        } else {
+                            ForEach(templateManager.templates, id: \.self) { text in
+                                Button(text) {
+                                    let newLyric = LyricBlock(text: text, startMs: store.currentTimeMs, endMs: store.currentTimeMs + 2000)
+                                    store.addLyric(newLyric)
+                                }
+                            }
+                        }
+                        Divider()
+                        Button("Create Template...") {
+                            showCreateTemplateAlert()
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "text.quote")
+                            Text("Templates")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.15))
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                    }
+                    .menuStyle(BorderlessButtonMenuStyle())
+                    .buttonStyle(.plain)
                     Divider().frame(height: 16).background(Color.gray.opacity(0.5)).padding(.horizontal, 8)
                     
                     Button(action: {
