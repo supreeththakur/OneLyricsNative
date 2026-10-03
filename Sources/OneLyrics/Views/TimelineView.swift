@@ -198,14 +198,33 @@ struct TimelineView: View {
                             let currentTotalWidth = max(geo.size.width, geo.size.width * store.timelineZoom)
                             let px = store.effectiveDuration > 0 ? (activeTime / store.effectiveDuration) * currentTotalWidth : 0
                             
-                            let viewportWidth = nsScrollView.contentSize.width
-                            let targetX = px - (viewportWidth / 2.0)
+                            let visibleRect = nsScrollView.documentVisibleRect
+                            let currentX = visibleRect.origin.x
+                            let viewportWidth = visibleRect.width
                             
-                            let maxOffset = documentView.bounds.width - viewportWidth
-                            let safeX = max(0, min(targetX, maxOffset))
+                            // Scroll threshold (e.g. 50 points from the edge)
+                            let rightThreshold = currentX + viewportWidth - 50
+                            let leftThreshold = currentX + 50
                             
-                            let currentY = nsScrollView.documentVisibleRect.origin.y
-                            documentView.scroll(NSPoint(x: safeX, y: currentY))
+                            var targetX = currentX
+                            
+                            if px > rightThreshold {
+                                // Jump forward by 80% of screen to avoid continuous scrolling
+                                targetX = px - (viewportWidth * 0.2)
+                            } else if px < leftThreshold && currentX > 0 {
+                                targetX = px - (viewportWidth * 0.8)
+                            }
+                            
+                            if targetX != currentX {
+                                let maxOffset = max(0, documentView.bounds.width - viewportWidth)
+                                let safeX = max(0, min(targetX, maxOffset))
+                                
+                                NSAnimationContext.runAnimationGroup({ context in
+                                    context.duration = 0.3
+                                    context.allowsImplicitAnimation = true
+                                    documentView.animator().setBoundsOrigin(NSPoint(x: safeX, y: visibleRect.origin.y))
+                                })
+                            }
                         }
                     }
                 }

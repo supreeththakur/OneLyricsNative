@@ -36,7 +36,10 @@ struct ContentView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
-                    Button(action: onBack) {
+                    Button(action: {
+                        store.pause()
+                        onBack()
+                    }) {
                         HStack {
                             Image(systemName: "chevron.left")
                             Text("Projects")
@@ -139,6 +142,9 @@ struct ContentView: View {
                     .zIndex(101)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
+        }
+        .onDisappear {
+            store.pause()
         }
     }
 }

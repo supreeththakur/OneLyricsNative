@@ -237,6 +237,14 @@ class ProjectStore: ObservableObject {
         }
     }
     
+    func pause() {
+        if isPlaying {
+            player?.pause()
+            bgPlayer?.pause()
+            isPlaying = false
+        }
+    }
+    
     func seek(to ms: Double, isScrubbing: Bool = false) {
         guard effectiveDuration > 0 else { return }
         
