@@ -49,25 +49,17 @@ struct TimelineView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    Menu {
-                        if templateManager.templates.isEmpty {
-                            Text("No Templates Saved")
+                    Button(action: {
+                        if let firstTemplate = templateManager.templates.first {
+                            let newLyric = LyricBlock(text: firstTemplate, startMs: store.currentTimeMs, endMs: store.currentTimeMs + 2000)
+                            store.addLyric(newLyric)
                         } else {
-                            ForEach(templateManager.templates, id: \.self) { text in
-                                Button(text) {
-                                    let newLyric = LyricBlock(text: text, startMs: store.currentTimeMs, endMs: store.currentTimeMs + 2000)
-                                    store.addLyric(newLyric)
-                                }
-                            }
-                        }
-                        Divider()
-                        Button("Create Template...") {
                             showCreateTemplateAlert()
                         }
-                    } label: {
+                    }) {
                         HStack {
                             Image(systemName: "text.quote")
-                            Text("Templates")
+                            Text("Template")
                         }
                         .font(.system(size: 13, weight: .semibold))
                         .padding(.horizontal, 14)
@@ -77,7 +69,6 @@ struct TimelineView: View {
                         .cornerRadius(8)
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1), lineWidth: 1))
                     }
-                    .menuStyle(BorderlessButtonMenuStyle())
                     .buttonStyle(.plain)
                     Divider().frame(height: 16).background(Color.gray.opacity(0.5)).padding(.horizontal, 8)
                     
@@ -138,7 +129,7 @@ struct TimelineView: View {
                     let newZoom = store.timelineZoom + Double(magnification) * store.timelineZoom * 2.0
                     store.timelineZoom = max(0.5, min(20.0, newZoom))
                 }) {
-                    ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                    ScrollView(.horizontal, showsIndicators: true) {
                         ZStack(alignment: .topLeading) {
                             // Full background - makes whole area clickable
                             Rectangle()
