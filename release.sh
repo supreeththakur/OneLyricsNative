@@ -1,17 +1,24 @@
 #!/bin/bash
 set -e
 
-echo "Building release binary..."
-swift build -c release --arch arm64 --arch x86_64
+VERSION="1.1.6"
+BUILD="7"
 
-echo "Creating App Bundle Structure..."
-APP_DIR="OneLyrics.app"
-rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS"
-mkdir -p "$APP_DIR/Contents/Resources"
-
-echo "Writing Info.plist..."
-cat > "$APP_DIR/Contents/Info.plist" <<EOF
+function build_and_package() {
+    ARCH=$1
+    DMG_NAME=$2
+    
+    echo "Building release binary for $ARCH..."
+    swift build -c release --arch $ARCH
+    
+    echo "Creating App Bundle Structure for $ARCH..."
+    APP_DIR="OneLyrics.app"
+    rm -rf "$APP_DIR"
+    mkdir -p "$APP_DIR/Contents/MacOS"
+    mkdir -p "$APP_DIR/Contents/Resources"
+    
+    echo "Writing Info.plist..."
+    cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -25,9 +32,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.5</string>
+    <string>${VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>${BUILD}</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>CFBundleIconFile</key>
@@ -36,46 +43,57 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-echo "Copying binary..."
-cp .build/out/Products/Release/OneLyrics "$APP_DIR/Contents/MacOS/OneLyrics"
+    echo "Copying binary..."
+    if [ "$ARCH" == "arm64" ]; then
+        cp .build/arm64-apple-macosx/release/OneLyrics "$APP_DIR/Contents/MacOS/OneLyrics"
+    else
+        cp .build/x86_64-apple-macosx/release/OneLyrics "$APP_DIR/Contents/MacOS/OneLyrics"
+    fi
 
-echo "Generating AppIcon..."
-LOGO_PATH="/Users/itech/Downloads/onelyricslogo.png"
-if [ -f "$LOGO_PATH" ]; then
-    mkdir -p MyIcon.iconset
-    sips -z 16 16     "$LOGO_PATH" --out MyIcon.iconset/icon_16x16.png
-    sips -z 32 32     "$LOGO_PATH" --out MyIcon.iconset/icon_16x16@2x.png
-    sips -z 32 32     "$LOGO_PATH" --out MyIcon.iconset/icon_32x32.png
-    sips -z 64 64     "$LOGO_PATH" --out MyIcon.iconset/icon_32x32@2x.png
-    sips -z 128 128   "$LOGO_PATH" --out MyIcon.iconset/icon_128x128.png
-    sips -z 256 256   "$LOGO_PATH" --out MyIcon.iconset/icon_128x128@2x.png
-    sips -z 256 256   "$LOGO_PATH" --out MyIcon.iconset/icon_256x256.png
-    sips -z 512 512   "$LOGO_PATH" --out MyIcon.iconset/icon_256x256@2x.png
-    sips -z 512 512   "$LOGO_PATH" --out MyIcon.iconset/icon_512x512.png
-    sips -z 1024 1024 "$LOGO_PATH" --out MyIcon.iconset/icon_512x512@2x.png
-    iconutil -c icns MyIcon.iconset -o "$APP_DIR/Contents/Resources/AppIcon.icns"
-    rm -R MyIcon.iconset
-fi
+    echo "Generating AppIcon..."
+    LOGO_PATH="/Users/itech/Downloads/onelyricslogo.png"
+    if [ -f "$LOGO_PATH" ]; then
+        mkdir -p MyIcon.iconset
+        sips -z 16 16     "$LOGO_PATH" --out MyIcon.iconset/icon_16x16.png
+        sips -z 32 32     "$LOGO_PATH" --out MyIcon.iconset/icon_16x16@2x.png
+        sips -z 32 32     "$LOGO_PATH" --out MyIcon.iconset/icon_32x32.png
+        sips -z 64 64     "$LOGO_PATH" --out MyIcon.iconset/icon_32x32@2x.png
+        sips -z 128 128   "$LOGO_PATH" --out MyIcon.iconset/icon_128x128.png
+        sips -z 256 256   "$LOGO_PATH" --out MyIcon.iconset/icon_128x128@2x.png
+        sips -z 256 256   "$LOGO_PATH" --out MyIcon.iconset/icon_256x256.png
+        sips -z 512 512   "$LOGO_PATH" --out MyIcon.iconset/icon_256x256@2x.png
+        sips -z 512 512   "$LOGO_PATH" --out MyIcon.iconset/icon_512x512.png
+        sips -z 1024 1024 "$LOGO_PATH" --out MyIcon.iconset/icon_512x512@2x.png
+        iconutil -c icns MyIcon.iconset -o "$APP_DIR/Contents/Resources/AppIcon.icns"
+        rm -R MyIcon.iconset
+    fi
 
-echo "Signing the App Bundle..."
-codesign --force --deep -s - "$APP_DIR"
+    echo "Signing the App Bundle..."
+    codesign --force --deep -s - "$APP_DIR"
 
-echo "Creating DMG..."
-DMG_ROOT="DMG_Root"
-rm -rf "$DMG_ROOT"
-mkdir -p "$DMG_ROOT"
-cp -R "$APP_DIR" "$DMG_ROOT/"
-ln -s /Applications "$DMG_ROOT/Applications"
+    echo "Creating DMG..."
+    DMG_ROOT="DMG_Root_${ARCH}"
+    rm -rf "$DMG_ROOT"
+    mkdir -p "$DMG_ROOT"
+    cp -R "$APP_DIR" "$DMG_ROOT/"
+    ln -s /Applications "$DMG_ROOT/Applications"
 
-hdiutil create -volname "OneLyrics" -srcfolder "$DMG_ROOT" -ov -format UDZO OneLyrics.dmg
+    rm -f "${DMG_NAME}"
+    hdiutil create -volname "OneLyrics" -srcfolder "$DMG_ROOT" -ov -format UDZO "${DMG_NAME}"
+}
+
+# Build and package both architectures
+build_and_package "arm64" "OneLyrics-AppleSilicon.dmg"
+build_and_package "x86_64" "OneLyrics-Intel.dmg"
 
 echo "Uploading DMG to GitHub..."
 export PATH="/usr/bin:$PATH"
 
 # Create release if it doesn't exist
-gh release create v1.1.5 -t "v1.1.5" -n "v1.1.5 Release: Universal Binary (Support for Intel and Apple Silicon Macs)" || true
+gh release create v${VERSION} -t "v${VERSION}" -n "v${VERSION} Release: Separate Binaries for Apple Silicon & Intel (Resolves #1 and #2)" || true
 
-# Upload the dmg
-gh release upload v1.1.5 OneLyrics.dmg --clobber
+# Upload the dmgs
+gh release upload v${VERSION} OneLyrics-AppleSilicon.dmg --clobber
+gh release upload v${VERSION} OneLyrics-Intel.dmg --clobber
 
 echo "Done!"
