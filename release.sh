@@ -44,11 +44,7 @@ function build_and_package() {
 EOF
 
     echo "Copying binary..."
-    if [ "$ARCH" == "arm64" ]; then
-        cp .build/arm64-apple-macosx/release/OneLyrics "$APP_DIR/Contents/MacOS/OneLyrics"
-    else
-        cp .build/x86_64-apple-macosx/release/OneLyrics "$APP_DIR/Contents/MacOS/OneLyrics"
-    fi
+    cp .build/out/Products/Release/OneLyrics "$APP_DIR/Contents/MacOS/OneLyrics"
 
     echo "Generating AppIcon..."
     LOGO_PATH="/Users/itech/Downloads/onelyricslogo.png"
