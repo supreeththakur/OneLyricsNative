@@ -4,8 +4,6 @@ struct FetchBackgroundModal: View {
     @Binding var isPresented: Bool
     @EnvironmentObject var store: ProjectStore
     
-    @State private var searchQuery: String = ""
-    @State private var results: [UnsplashResult] = []
     @State private var isSearching = false
     @State private var downloadingId: String? = nil
     @State private var searchTask: Task<Void, Never>? = nil
@@ -41,14 +39,14 @@ struct FetchBackgroundModal: View {
             // Search Bar
             HStack {
                 Image(systemName: "magnifyingglass").foregroundColor(.gray)
-                TextField("Search nature, neon, abstract...", text: $searchQuery)
+                TextField("Search nature, neon, abstract...", text: $store.bgSearchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .foregroundColor(.white)
-                    .onChange(of: searchQuery) { _ in
+                    .onChange(of: store.bgSearchQuery) { _ in
                         searchTask?.cancel()
-                        if searchQuery.isEmpty {
-                            results = []
+                        if store.bgSearchQuery.isEmpty {
+                            store.bgSearchResults = []
                         } else {
                             searchTask = Task {
                                 do {
@@ -73,7 +71,7 @@ struct FetchBackgroundModal: View {
             .padding()
             
             // Results Grid
-            if results.isEmpty && !isSearching && !searchQuery.isEmpty {
+            if store.bgSearchResults.isEmpty && !isSearching && !store.bgSearchQuery.isEmpty {
                 VStack {
                     Spacer()
                     Image(systemName: "photo.badge.exclamationmark")
@@ -87,7 +85,7 @@ struct FetchBackgroundModal: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(results) { result in
+                        ForEach(store.bgSearchResults) { result in
                             ZStack(alignment: .bottomTrailing) {
                                 // Thumbnail Image
                                 AsyncImage(url: URL(string: result.urls?.thumb ?? "")) { phase in
@@ -136,7 +134,7 @@ struct FetchBackgroundModal: View {
                             .disabled(downloadingId != nil)
                         }
                         
-                        if hasMoreResults && !results.isEmpty {
+                        if hasMoreResults && !store.bgSearchResults.isEmpty {
                             Color.clear
                                 .frame(height: 20)
                                 .onAppear {
@@ -163,19 +161,19 @@ struct FetchBackgroundModal: View {
     }
     
     private func performSearch(isNewSearch: Bool) {
-        guard !searchQuery.isEmpty else { return }
+        guard !store.bgSearchQuery.isEmpty else { return }
         
         if isNewSearch {
             isSearching = true
             currentPage = 1
             hasMoreResults = true
-            results.removeAll()
+            store.bgSearchResults.removeAll()
         } else {
             isLoadingMore = true
             currentPage += 1
         }
         
-        let queryToSearch = searchQuery
+        let queryToSearch = store.bgSearchQuery
         let pageToSearch = currentPage
         
         Task {
@@ -183,9 +181,9 @@ struct FetchBackgroundModal: View {
                 let res = try await UnsplashManager.shared.search(query: queryToSearch, page: pageToSearch)
                 DispatchQueue.main.async {
                     if isNewSearch {
-                        self.results = res
+                        self.store.bgSearchResults = res
                     } else {
-                        self.results.append(contentsOf: res)
+                        self.store.bgSearchResults.append(contentsOf: res)
                     }
                     if res.isEmpty {
                         self.hasMoreResults = false

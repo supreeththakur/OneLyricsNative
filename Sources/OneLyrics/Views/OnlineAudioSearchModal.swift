@@ -5,8 +5,6 @@ struct OnlineAudioSearchModal: View {
     @EnvironmentObject var store: ProjectStore
     @Binding var isPresented: Bool
     
-    @State private var searchQuery: String = ""
-    @State private var results: [YTResult] = []
     @State private var isSearching = false
     @State private var downloadingId: String? = nil
     @State private var searchTask: Task<Void, Never>? = nil
@@ -35,16 +33,16 @@ struct OnlineAudioSearchModal: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.gray)
-                TextField("Search YouTube (e.g. Blinding Lights instrumental)", text: $searchQuery)
+                TextField("Search YouTube (e.g. Blinding Lights instrumental)", text: $store.audioSearchQuery)
                     .textFieldStyle(PlainTextFieldStyle())
                     .onSubmit {
                         searchTask?.cancel()
                         performSearch()
                     }
-                    .onChange(of: searchQuery) { _ in
+                    .onChange(of: store.audioSearchQuery) { _ in
                         searchTask?.cancel()
-                        if searchQuery.isEmpty {
-                            results = []
+                        if store.audioSearchQuery.isEmpty {
+                            store.audioSearchResults = []
                             return
                         }
                         searchTask = Task {
@@ -79,7 +77,7 @@ struct OnlineAudioSearchModal: View {
                         .foregroundColor(.gray)
                     Spacer()
                 }
-            } else if results.isEmpty && !isSearching {
+            } else if store.audioSearchResults.isEmpty && !isSearching {
                 VStack {
                     Spacer()
                     Image(systemName: "music.note.list")
@@ -93,7 +91,7 @@ struct OnlineAudioSearchModal: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(results) { result in
+                        ForEach(store.audioSearchResults) { result in
                             HStack(spacing: 12) {
                                 // Thumbnail
                                 let thumbUrlStr = "https://i.ytimg.com/vi/\(result.id)/hqdefault.jpg"
@@ -164,14 +162,14 @@ struct OnlineAudioSearchModal: View {
     }
     
     private func performSearch() {
-        guard !searchQuery.isEmpty else { return }
+        guard !store.audioSearchQuery.isEmpty else { return }
         isSearching = true
         
         Task {
             do {
-                let res = try await ytdl.search(query: searchQuery)
+                let res = try await ytdl.search(query: store.audioSearchQuery)
                 DispatchQueue.main.async {
-                    self.results = res
+                    self.store.audioSearchResults = res
                     self.isSearching = false
                 }
             } catch {

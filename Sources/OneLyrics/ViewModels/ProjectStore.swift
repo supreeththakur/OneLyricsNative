@@ -13,6 +13,12 @@ class ProjectStore: ObservableObject {
     @Published var isShowingBackgroundFetch: Bool = false
     @Published var isShowingThumbnailMaker: Bool = false
     
+    // Modal Persistent States
+    @Published var bgSearchQuery: String = ""
+    @Published var bgSearchResults: [UnsplashResult] = []
+    
+    @Published var audioSearchQuery: String = ""
+    @Published var audioSearchResults: [YTResult] = []
     // New states for Timeline Tracks
     @Published var waveformData: [Float] = []
     @Published var thumbnails: [(time: Double, image: NSImage)] = []
