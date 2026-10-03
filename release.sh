@@ -2,7 +2,7 @@
 set -e
 
 echo "Building release binary..."
-swift build -c release
+swift build -c release --arch arm64 --arch x86_64
 
 echo "Creating App Bundle Structure..."
 APP_DIR="OneLyrics.app"
@@ -25,9 +25,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.4</string>
+    <string>1.1.5</string>
     <key>CFBundleVersion</key>
-    <string>5</string>
+    <string>6</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>CFBundleIconFile</key>
@@ -37,7 +37,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
 EOF
 
 echo "Copying binary..."
-cp .build/release/OneLyrics "$APP_DIR/Contents/MacOS/"
+cp .build/out/Products/Release/OneLyrics "$APP_DIR/Contents/MacOS/OneLyrics"
 
 echo "Generating AppIcon..."
 LOGO_PATH="/Users/itech/Downloads/onelyricslogo.png"
@@ -73,9 +73,9 @@ echo "Uploading DMG to GitHub..."
 export PATH="/usr/bin:$PATH"
 
 # Create release if it doesn't exist
-gh release create v1.1.4 -t "v1.1.4" -n "v1.1.4 Release: Support for macOS 13 (Ventura) and higher" || true
+gh release create v1.1.5 -t "v1.1.5" -n "v1.1.5 Release: Universal Binary (Support for Intel and Apple Silicon Macs)" || true
 
 # Upload the dmg
-gh release upload v1.1.4 OneLyrics.dmg --clobber
+gh release upload v1.1.5 OneLyrics.dmg --clobber
 
 echo "Done!"
