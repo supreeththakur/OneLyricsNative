@@ -6,11 +6,11 @@ struct ExportModalView: View {
     @Binding var isPresented: Bool
     @StateObject private var exporter = VideoExporter()
     
-    @State private var selectedFormat = "MP4"
-    @State private var selectedResolution = "1080p"
-    @State private var selectedBitrate = "High"
-    @State private var outputPath = ""
-    @State private var uploadToYouTube = true
+    @AppStorage("export_selectedFormat") private var selectedFormat = "MP4"
+    @AppStorage("export_selectedResolution") private var selectedResolution = "1080p"
+    @AppStorage("export_selectedBitrate") private var selectedBitrate = "High"
+    @AppStorage("export_outputPath") private var outputPath = ""
+    @AppStorage("export_uploadToYouTube") private var uploadToYouTube = true
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
