@@ -59,11 +59,25 @@ class ExportManager: ObservableObject {
     
     init() {
         loadQueue()
-        // Mark interrupted jobs as failed on startup
+        // Mark interrupted jobs as failed on startup (only worker should really do this, but harmless)
         for i in 0..<jobs.count {
             if jobs[i].status == .exporting || jobs[i].status == .paused {
                 jobs[i].status = .failed
                 jobs[i].error = "Interrupted during export"
+            }
+        }
+        
+        startPolling()
+    }
+    
+    private func startPolling() {
+        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            self.loadQueue()
+            
+            if self.isWorker && !self.isProcessing {
+                self.processNextIfAvailable()
             }
         }
     }
@@ -71,18 +85,6 @@ class ExportManager: ObservableObject {
     func startProcessing() {
         isWorker = true
         processNextIfAvailable()
-        
-        // Setup polling to watch for jobs added by the main app
-        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            
-            // Reload the queue. loadQueue is now smart enough to not overwrite the active job.
-            self.loadQueue()
-            
-            if !self.isProcessing {
-                self.processNextIfAvailable()
-            }
-        }
     }
     
     func addJob(projectName: String, state: ProjectState, durationMs: Double, format: String, resolution: String, bitrate: String, outputURL: URL, publishToYouTube: Bool = false, priority: ExportPriority = .normal) {
@@ -98,6 +100,7 @@ class ExportManager: ObservableObject {
             publishToYouTube: publishToYouTube
         )
         DispatchQueue.main.async {
+            self.loadQueue()
             self.jobs.append(job)
             self.saveQueue()
             self.processNextIfAvailable()

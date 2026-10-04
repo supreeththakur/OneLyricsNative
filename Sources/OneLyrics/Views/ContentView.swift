@@ -60,12 +60,12 @@ struct ContentView: View {
                         if !exportManager.jobs.isEmpty {
                             Button(action: { ExportManager.shared.launchExporterApp() }) {
                                 HStack {
-                                    if let active = exportManager.jobs.first(where: { $0.status == .exporting }) {
+                                    if exportManager.jobs.contains(where: { $0.status == .exporting }) {
                                         ProgressView()
                                             .controlSize(.small)
                                             .tint(.white)
                                             .frame(width: 12, height: 12)
-                                        Text("\(Int(active.progress * 100))%")
+                                        Text("Exporting...")
                                     } else {
                                         Image(systemName: "film")
                                         Text("\(exportManager.jobs.count)")

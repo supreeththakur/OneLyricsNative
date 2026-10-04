@@ -593,20 +593,18 @@ class VideoExporter: ObservableObject {
                 }
                 
                 group.notify(queue: .main) {
-                    writer.finishWriting {
-                        DispatchQueue.main.async {
-                            if self.isCancelled {
-                    writer.cancelWriting()
-                    DispatchQueue.main.async {
+                    if self.isCancelled {
+                        writer.cancelWriting()
                         self.isExporting = false
                         self.progress = 0
                         self.exportError = "Export cancelled"
                         try? FileManager.default.removeItem(at: outputURL)
+                        return
                     }
-                    return
-                }
-                
-                if writer.status == .completed {
+                    
+                    writer.finishWriting {
+                        DispatchQueue.main.async {
+                            if writer.status == .completed {
                                 self.progress = 1.0
                                 self.isExporting = false
                                 self.exportedURL = outputURL

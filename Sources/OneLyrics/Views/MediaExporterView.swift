@@ -7,6 +7,10 @@ struct MediaExporterView: View {
     @State private var showYouTubePublish = false
     @State private var selectedVideoURL: URL? = nil
     
+    @StateObject private var projectManager = ProjectManager()
+    @State private var projectToExport: ProjectState? = nil
+    @State private var projectToThumbnail: ProjectState? = nil
+    
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -32,23 +36,27 @@ struct MediaExporterView: View {
             Divider()
             
             List {
-                if manager.jobs.isEmpty {
+                let activeJobs = manager.jobs.filter { $0.status == .exporting || $0.status == .paused }
+                let queuedJobs = manager.jobs.filter { $0.status == .queued }.sorted { $0.priority > $1.priority }
+                let completedJobs = manager.jobs.filter { $0.status == .completed }.sorted { ($0.completedAt ?? Date()) > ($1.completedAt ?? Date()) }
+                let failedJobs = manager.jobs.filter { $0.status == .failed || $0.status == .cancelled }
+                
+                let completedNames = Set(completedJobs.map { $0.projectName })
+                let exportedProjects = projectManager.projects.filter { completedNames.contains($0.title) }
+                let notExportedProjects = projectManager.projects.filter { !completedNames.contains($0.title) }
+                
+                if manager.jobs.isEmpty && projectManager.projects.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "film")
                             .font(.system(size: 40))
                             .foregroundColor(.gray.opacity(0.5))
-                        Text("No items in queue")
+                        Text("No items in queue or saved projects")
                             .foregroundColor(.gray)
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 40)
                     .listRowBackground(Color.clear)
                 } else {
-                    let activeJobs = manager.jobs.filter { $0.status == .exporting || $0.status == .paused }
-                    let queuedJobs = manager.jobs.filter { $0.status == .queued }.sorted { $0.priority > $1.priority }
-                    let completedJobs = manager.jobs.filter { $0.status == .completed }.sorted { ($0.completedAt ?? Date()) > ($1.completedAt ?? Date()) }
-                    let failedJobs = manager.jobs.filter { $0.status == .failed || $0.status == .cancelled }
-                    
                     if !activeJobs.isEmpty {
                         Section(header: Text("Currently Exporting").font(.subheadline).foregroundColor(.gray)) {
                             ForEach(activeJobs) { job in
@@ -66,7 +74,7 @@ struct MediaExporterView: View {
                     }
                     
                     if !completedJobs.isEmpty {
-                        Section(header: Text("Completed").font(.subheadline).foregroundColor(.gray)) {
+                        Section(header: Text("Completed Jobs").font(.subheadline).foregroundColor(.gray)) {
                             ForEach(completedJobs) { job in
                                 CompletedExportRow(job: job) {
                                     self.selectedVideoURL = job.outputURL
@@ -78,6 +86,30 @@ struct MediaExporterView: View {
                             }
                             .buttonStyle(.link)
                             .padding(.top, 4)
+                        }
+                    }
+                    
+                    if !notExportedProjects.isEmpty {
+                        Section(header: Text("Projects (Not Exported)").font(.subheadline).foregroundColor(.gray)) {
+                            ForEach(notExportedProjects, id: \.id) { project in
+                                ProjectExportRow(project: project, onExport: {
+                                    self.projectToExport = project
+                                }, onThumbnail: {
+                                    self.projectToThumbnail = project
+                                })
+                            }
+                        }
+                    }
+                    
+                    if !exportedProjects.isEmpty {
+                        Section(header: Text("Projects (Exported)").font(.subheadline).foregroundColor(.gray)) {
+                            ForEach(exportedProjects, id: \.id) { project in
+                                ProjectExportRow(project: project, onExport: {
+                                    self.projectToExport = project
+                                }, onThumbnail: {
+                                    self.projectToThumbnail = project
+                                })
+                            }
                         }
                     }
                     
@@ -102,6 +134,36 @@ struct MediaExporterView: View {
                 YouTubePublishView(isPresented: $showYouTubePublish, videoFileURL: selectedVideoURL, initialSchedule: false)
                     .zIndex(101)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            
+            // Export Settings Modal Overlay
+            if let project = projectToExport {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { projectToExport = nil }
+                    .zIndex(102)
+                
+                ExportModalWrapper(project: project, isPresented: Binding(
+                    get: { projectToExport != nil },
+                    set: { if !$0 { projectToExport = nil } }
+                ))
+                .zIndex(103)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            
+            // Thumbnail Settings Modal Overlay
+            if let project = projectToThumbnail {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { projectToThumbnail = nil }
+                    .zIndex(104)
+                
+                ThumbnailModalWrapper(project: project, isPresented: Binding(
+                    get: { projectToThumbnail != nil },
+                    set: { if !$0 { projectToThumbnail = nil } }
+                ))
+                .zIndex(105)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
         }
         .frame(width: 450, height: 600)
@@ -258,5 +320,72 @@ struct FailedExportRow: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
+    }
+}
+
+struct ProjectExportRow: View {
+    var project: ProjectState
+    var onExport: () -> Void
+    var onThumbnail: () -> Void
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "doc.text")
+                .foregroundColor(.blue)
+            Text(project.title)
+                .font(.subheadline)
+            Spacer()
+            
+            Button(action: {
+                onThumbnail()
+            }) {
+                Image(systemName: "photo.artframe")
+                    .foregroundColor(.orange)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 8)
+            
+            Button("Export") {
+                onExport()
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color.blue)
+            .cornerRadius(6)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+struct ExportModalWrapper: View {
+    var project: ProjectState
+    @Binding var isPresented: Bool
+    
+    @StateObject private var dummyStore = ProjectStore()
+    
+    var body: some View {
+        ExportModalView(isPresented: $isPresented)
+            .environmentObject(dummyStore)
+            .onAppear {
+                dummyStore.state = project
+            }
+    }
+}
+
+struct ThumbnailModalWrapper: View {
+    var project: ProjectState
+    @Binding var isPresented: Bool
+    
+    @StateObject private var dummyStore = ProjectStore()
+    
+    var body: some View {
+        ThumbnailMakerModal(isPresented: $isPresented)
+            .environmentObject(dummyStore)
+            .onAppear {
+                dummyStore.state = project
+                dummyStore.isShowingThumbnailMaker = true // Because ThumbnailMakerModal might rely on this internally, though we bound it to $isPresented.
+            }
     }
 }
