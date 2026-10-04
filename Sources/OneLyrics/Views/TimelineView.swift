@@ -181,39 +181,43 @@ struct TimelineView: View {
                                 path.closeSubpath()
                             }
                             .fill(Color.red)
+                            
+                            // Scrubbing Interaction Area
+                            Rectangle()
+                                .fill(Color.black.opacity(0.001))
+                                .frame(width: totalWidth, height: 40)
+                                .gesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { value in
+                                            if !isScrubbing {
+                                                isScrubbing = true
+                                                wasPlayingBeforeScrub = store.isPlaying
+                                                if wasPlayingBeforeScrub {
+                                                    store.player?.pause()
+                                                    store.bgPlayer?.pause()
+                                                }
+                                            }
+                                            let percent = max(0, min(1, value.location.x / totalWidth))
+                                            let ms = percent * store.effectiveDuration
+                                            scrubbingPosition = ms
+                                            store.seek(to: ms, isScrubbing: true)
+                                        }
+                                        .onEnded { value in
+                                            let percent = max(0, min(1, value.location.x / totalWidth))
+                                            let ms = percent * store.effectiveDuration
+                                            scrubbingPosition = nil
+                                            store.seek(to: ms, isScrubbing: false)
+                                            
+                                            if wasPlayingBeforeScrub {
+                                                store.player?.play()
+                                                store.bgPlayer?.play()
+                                                wasPlayingBeforeScrub = false
+                                            }
+                                            isScrubbing = false
+                                        }
+                                )
                         }
                         .frame(width: totalWidth, height: 300)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    if !isScrubbing {
-                                        isScrubbing = true
-                                        wasPlayingBeforeScrub = store.isPlaying
-                                        if wasPlayingBeforeScrub {
-                                            store.player?.pause()
-                                            store.bgPlayer?.pause()
-                                        }
-                                    }
-                                    let percent = max(0, min(1, value.location.x / totalWidth))
-                                    let ms = percent * store.effectiveDuration
-                                    scrubbingPosition = ms
-                                    store.seek(to: ms, isScrubbing: true)
-                                }
-                                .onEnded { value in
-                                    let percent = max(0, min(1, value.location.x / totalWidth))
-                                    let ms = percent * store.effectiveDuration
-                                    scrubbingPosition = nil
-                                    store.seek(to: ms, isScrubbing: false)
-                                    
-                                    if wasPlayingBeforeScrub {
-                                        store.player?.play()
-                                        store.bgPlayer?.play()
-                                        wasPlayingBeforeScrub = false
-                                    }
-                                    isScrubbing = false
-                                }
-                        )
                     }
                     .background(Color(red: 0.05, green: 0.05, blue: 0.06))
                 }

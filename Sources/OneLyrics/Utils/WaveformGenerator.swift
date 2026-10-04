@@ -9,46 +9,62 @@ actor WaveformGenerator {
             do {
                 let file = try AVAudioFile(forReading: url)
                 let format = file.processingFormat
-                let frameCount = UInt32(file.length)
+                let totalFramesInFile = file.length
+                guard totalFramesInFile > 0 else { return [] }
                 
-                guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
-                    return []
-                }
+                // Read in chunks of 1 second or 100,000 frames
+                let chunkSize = AVAudioFrameCount(100_000)
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkSize) else { return [] }
                 
-                try file.read(into: buffer)
+                let samplesPerPixel = max(1, Int(totalFramesInFile) / targetSamples)
+                var result = [Float](repeating: 0, count: targetSamples)
                 
-                guard let floatChannelData = buffer.floatChannelData else {
-                    return []
-                }
+                var currentFrame: AVAudioFramePosition = 0
+                var currentPixel = 0
                 
-                let channelData = floatChannelData[0]
-                let totalFrames = Int(buffer.frameLength)
-                
-                guard totalFrames > 0 else { return [] }
-                
-                let samplesPerPixel = max(1, totalFrames / targetSamples)
-                var result: [Float] = []
-                result.reserveCapacity(targetSamples)
+                var framesAccumulatedForPixel = 0
+                var sumForPixel: Float = 0
                 
                 var maxAmplitude: Float = 0
                 
-                for i in 0..<targetSamples {
-                    let startFrame = i * samplesPerPixel
-                    let endFrame = min(startFrame + samplesPerPixel, totalFrames)
+                while currentFrame < totalFramesInFile {
+                    let framesToRead = min(AVAudioFramePosition(chunkSize), totalFramesInFile - currentFrame)
+                    buffer.frameLength = AVAudioFrameCount(framesToRead)
                     
-                    if startFrame >= totalFrames { break }
-                    
-                    var sum: Float = 0
-                    for j in startFrame..<endFrame {
-                        sum += abs(channelData[j])
+                    do {
+                        try file.read(into: buffer, frameCount: buffer.frameLength)
+                    } catch {
+                        // EOF or read error, break and process what we have
+                        break
                     }
                     
-                    let avg = sum / Float(endFrame - startFrame)
-                    result.append(avg)
+                    guard let channelData = buffer.floatChannelData?[0] else { break }
+                    let readFrames = Int(buffer.frameLength)
                     
-                    if avg > maxAmplitude {
-                        maxAmplitude = avg
+                    for i in 0..<readFrames {
+                        sumForPixel += abs(channelData[i])
+                        framesAccumulatedForPixel += 1
+                        
+                        if framesAccumulatedForPixel >= samplesPerPixel {
+                            let avg = sumForPixel / Float(framesAccumulatedForPixel)
+                            if currentPixel < targetSamples {
+                                result[currentPixel] = avg
+                                if avg > maxAmplitude { maxAmplitude = avg }
+                                currentPixel += 1
+                            }
+                            sumForPixel = 0
+                            framesAccumulatedForPixel = 0
+                        }
                     }
+                    
+                    currentFrame += AVAudioFramePosition(readFrames)
+                }
+                
+                // Process remaining frames for the last pixel
+                if framesAccumulatedForPixel > 0 && currentPixel < targetSamples {
+                    let avg = sumForPixel / Float(framesAccumulatedForPixel)
+                    result[currentPixel] = avg
+                    if avg > maxAmplitude { maxAmplitude = avg }
                 }
                 
                 // Normalize
