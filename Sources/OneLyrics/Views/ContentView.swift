@@ -7,6 +7,9 @@ struct ContentView: View {
     var onBack: () -> Void = {}
     @State private var showExportModal = false
     @State private var showSearchModal = false
+    @State private var showYouTubePublish = false
+    @State private var youtubeVideoURL: URL? = nil
+    @State private var scheduleToYouTube: Bool = false
     
     var body: some View {
         ZStack {
@@ -80,6 +83,20 @@ struct ContentView: View {
                             .cornerRadius(6)
                         }
                         .buttonStyle(.plain)
+                        
+                        Button(action: { showYouTubePublish = true }) {
+                            HStack {
+                                Image(systemName: "play.rectangle.fill")
+                                Text("YouTube")
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.8))
+                            .foregroundColor(.white)
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -103,7 +120,12 @@ struct ContentView: View {
                     .onTapGesture { showExportModal = false }
                     .zIndex(100)
                 
-                ExportModalView(isPresented: $showExportModal)
+                ExportModalView(isPresented: $showExportModal, onPublishToYouTube: { url, isScheduled in
+                    self.showExportModal = false
+                    self.youtubeVideoURL = url
+                    self.scheduleToYouTube = isScheduled
+                    self.showYouTubePublish = true
+                })
                     .zIndex(101)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
@@ -140,6 +162,18 @@ struct ContentView: View {
                     .zIndex(100)
                 
                 FetchBackgroundModal(isPresented: $store.isShowingBackgroundFetch)
+                    .zIndex(101)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            
+            // YouTube Publish Modal Overlay
+            if showYouTubePublish {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { showYouTubePublish = false }
+                    .zIndex(100)
+                
+                YouTubePublishView(isPresented: $showYouTubePublish, videoFileURL: youtubeVideoURL, initialSchedule: scheduleToYouTube)
                     .zIndex(101)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }

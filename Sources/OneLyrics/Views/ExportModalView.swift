@@ -4,6 +4,7 @@ import AppKit
 struct ExportModalView: View {
     @EnvironmentObject var store: ProjectStore
     @Binding var isPresented: Bool
+    var onPublishToYouTube: ((URL, Bool) -> Void)? = nil
     @StateObject private var exporter = VideoExporter()
     
     @AppStorage("export_selectedFormat") private var selectedFormat = "MP4"
@@ -83,6 +84,26 @@ struct ExportModalView: View {
                         .background(Color.white.opacity(0.1))
                         .cornerRadius(8)
                         
+                        Button("Publish to YouTube") {
+                            onPublishToYouTube?(exportedURL, false)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+
+                        Button("Schedule to YouTube") {
+                            onPublishToYouTube?(exportedURL, true)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                        
                         Button("Done") {
                             isPresented = false
                         }
@@ -152,7 +173,7 @@ struct ExportModalView: View {
                     }
                 }
                 
-                Toggle("Prepare for YouTube Upload (Studio Assist)", isOn: $uploadToYouTube)
+                Toggle("Generate YouTube Assets (Metadata & Thumbnail)", isOn: $uploadToYouTube)
                     .font(.caption)
                     .foregroundColor(.white)
                     .tint(.red)
@@ -246,9 +267,6 @@ struct ExportModalView: View {
             // 3. Open Finder and Browser
             DispatchQueue.main.async {
                 NSWorkspace.shared.activateFileViewerSelecting([videoURL, metadataURL])
-                if let studioURL = URL(string: "https://studio.youtube.com/channel/c/videos/upload") {
-                    NSWorkspace.shared.open(studioURL)
-                }
             }
         }
     }

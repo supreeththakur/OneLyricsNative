@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-VERSION="1.1.12"
-BUILD="13"
+VERSION="1.2.0"
+BUILD="14"
 
 function build_and_package() {
     ARCH=$1
