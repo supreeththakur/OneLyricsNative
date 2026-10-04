@@ -72,7 +72,7 @@ class TransliterationEngine {
         }
         
         var out = ""
-        let chars = Array(w)
+        let chars = Array(w.unicodeScalars).map { Character($0) }
         var i = 0
         
         // Basic mapping
@@ -181,7 +181,7 @@ class TransliterationEngine {
     // MARK: - Kannada Transliteration (Advanced)
     private func transliterateKannadaWord(_ word: String) -> String {
         var out = ""
-        let chars = Array(word)
+        let chars = Array(word.unicodeScalars).map { Character($0) }
         var i = 0
         
         let consonants: [Character: String] = [
