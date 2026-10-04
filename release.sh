@@ -155,23 +155,18 @@ build_and_package_exporter "x86_64" "OneLyricsExporter-Intel.dmg"
 echo "Uploading DMGs to GitHub..."
 export PATH="/usr/bin:$PATH"
 
-# Create release for OneLyrics
+# Create a unified Suite release
 if [ -f "ReleaseNotes/v${VERSION}.md" ]; then
-    gh release create v${VERSION} -t "OneLyrics v${VERSION}" -F "ReleaseNotes/v${VERSION}.md" || true
+    gh release create v${VERSION} -t "OneLyrics Suite v${VERSION}" -F "ReleaseNotes/v${VERSION}.md" || true
 else
-    gh release create v${VERSION} -t "OneLyrics v${VERSION}" -n "OneLyrics v${VERSION} Release" || true
+    gh release create v${VERSION} -t "OneLyrics Suite v${VERSION}" -n "OneLyrics Suite v${VERSION} Release" || true
 fi
+
+# Upload all 4 DMGs to the same release
 gh release upload v${VERSION} OneLyrics-AppleSilicon.dmg --clobber
 gh release upload v${VERSION} OneLyrics-Intel.dmg --clobber
-
-# Create release for OneLyricsExporter
-if [ -f "ReleaseNotes/exporter-v${EXPORTER_VERSION}.md" ]; then
-    gh release create exporter-v${EXPORTER_VERSION} -t "OneLyricsExporter v${EXPORTER_VERSION}" -F "ReleaseNotes/exporter-v${EXPORTER_VERSION}.md" || true
-else
-    gh release create exporter-v${EXPORTER_VERSION} -t "OneLyricsExporter v${EXPORTER_VERSION}" -n "OneLyricsExporter v${EXPORTER_VERSION} Initial Release" || true
-fi
-gh release upload exporter-v${EXPORTER_VERSION} OneLyricsExporter-AppleSilicon.dmg --clobber
-gh release upload exporter-v${EXPORTER_VERSION} OneLyricsExporter-Intel.dmg --clobber
+gh release upload v${VERSION} OneLyricsExporter-AppleSilicon.dmg --clobber
+gh release upload v${VERSION} OneLyricsExporter-Intel.dmg --clobber
 
 echo "Cleaning up..."
 rm -f AppIcon.icns
