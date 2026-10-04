@@ -10,9 +10,15 @@ class VideoExporter: ObservableObject {
     @Published var isExporting = false
     @Published var exportError: String?
     @Published var exportedURL: URL?
+    @Published var isCancelled = false
+    
+    func cancel() {
+        isCancelled = true
+    }
     
     func export(
-        store: ProjectStore,
+        state: ProjectState,
+        durationMs: Double,
         format: String,
         resolution: String,
         bitrate: String,
@@ -40,7 +46,6 @@ class VideoExporter: ObservableObject {
         }()
         
         let fps = 30
-        let durationMs = store.effectiveDuration
         let totalFrames = Int(durationMs / 1000.0 * Double(fps))
         
         guard totalFrames > 0 else {
@@ -53,7 +58,7 @@ class VideoExporter: ObservableObject {
         var bgCGImage: CGImage? = nil
         var bgVideoReader: VideoFrameReader? = nil
         
-        if let bgURL = store.state.backgroundURL {
+        if let bgURL = state.backgroundURL {
             let ext = bgURL.pathExtension.lowercased()
             if ext == "mp4" || ext == "mov" {
                 bgVideoReader = VideoFrameReader(url: bgURL, width: width, height: height)
@@ -62,15 +67,15 @@ class VideoExporter: ObservableObject {
             }
         }
         
-        let lyrics = store.state.lyrics
-        let typography = store.state.typography
+        let lyrics = state.lyrics
+        let typography = state.typography
         
         // Determine audio source: explicit audio file or background video audio track
         let resolvedAudioURL: URL? = {
-            if let a = store.state.audioURL, FileManager.default.fileExists(atPath: a.path) {
+            if let a = state.audioURL, FileManager.default.fileExists(atPath: a.path) {
                 return a
             }
-            if let bg = store.state.backgroundURL, (bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov") {
+            if let bg = state.backgroundURL, (bg.pathExtension.lowercased() == "mp4" || bg.pathExtension.lowercased() == "mov") {
                 let asset = AVURLAsset(url: bg)
                 if !asset.tracks(withMediaType: .audio).isEmpty {
                     return bg
@@ -161,7 +166,7 @@ class VideoExporter: ObservableObject {
                                 
                                 let audioMix = AVMutableAudioMix()
                                 let mixParams = AVMutableAudioMixInputParameters(track: audioTrack)
-                                mixParams.setVolume(store.state.mediaConfig.volume, at: .zero)
+                                mixParams.setVolume(state.mediaConfig.volume, at: .zero)
                                 audioMix.inputParameters = [mixParams]
                                 aOutput.audioMix = audioMix
                                 
@@ -189,6 +194,11 @@ class VideoExporter: ObservableObject {
                     aInput.requestMediaDataWhenReady(on: audioQueue) {
                         _ = audioReader // Capture reader to prevent deallocation
                         while aInput.isReadyForMoreMediaData {
+                            if self.isCancelled {
+                                aInput.markAsFinished()
+                                group.leave()
+                                break
+                            }
                             if let sbuf = aOutput.copyNextSampleBuffer() {
                                 let pts = CMSampleBufferGetPresentationTimeStamp(sbuf)
                                 if CMTimeGetSeconds(pts) >= maxDurationSec {
@@ -215,7 +225,7 @@ class VideoExporter: ObservableObject {
                     CIContextOption.outputColorSpace: colorSpace,
                     CIContextOption.workingColorSpace: colorSpace
                 ])
-                let mediaConfig = store.state.mediaConfig
+                let mediaConfig = state.mediaConfig
                 
                 // --- HOISTED OUT OF LOOP FOR PERFORMANCE ---
                 let colorControlsFilter = CIFilter(name: "CIColorControls")
@@ -387,7 +397,7 @@ class VideoExporter: ObservableObject {
                 
                 videoInput.requestMediaDataWhenReady(on: videoQueue) {
                     while videoInput.isReadyForMoreMediaData {
-                        if frameIndex >= totalFrames || writer.status != .writing {
+                        if frameIndex >= totalFrames || writer.status != .writing || self.isCancelled {
                             videoInput.markAsFinished()
                             group.leave()
                             break
@@ -585,7 +595,18 @@ class VideoExporter: ObservableObject {
                 group.notify(queue: .main) {
                     writer.finishWriting {
                         DispatchQueue.main.async {
-                            if writer.status == .completed {
+                            if self.isCancelled {
+                    writer.cancelWriting()
+                    DispatchQueue.main.async {
+                        self.isExporting = false
+                        self.progress = 0
+                        self.exportError = "Export cancelled"
+                        try? FileManager.default.removeItem(at: outputURL)
+                    }
+                    return
+                }
+                
+                if writer.status == .completed {
                                 self.progress = 1.0
                                 self.isExporting = false
                                 self.exportedURL = outputURL

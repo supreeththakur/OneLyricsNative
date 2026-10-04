@@ -5,8 +5,7 @@ struct ExportModalView: View {
     @EnvironmentObject var store: ProjectStore
     @Binding var isPresented: Bool
     var onPublishToYouTube: ((URL, Bool) -> Void)? = nil
-    @StateObject private var exporter = VideoExporter()
-    
+    var onPublishToYouTube: ((URL, Bool) -> Void)? = nil
     @AppStorage("export_selectedFormat") private var selectedFormat = "MP4"
     @AppStorage("export_selectedResolution") private var selectedResolution = "1080p"
     @AppStorage("export_selectedBitrate") private var selectedBitrate = "High"
@@ -32,93 +31,7 @@ struct ExportModalView: View {
                 .buttonStyle(.plain)
             }
             
-            if exporter.isExporting {
-                // Progress View
-                VStack(spacing: 16) {
-                    Spacer()
-                    
-                    Text("Rendering Video...")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    
-                    ProgressView(value: exporter.progress)
-                        .progressViewStyle(.linear)
-                        .tint(.green)
-                    
-                    Text("\(Int(exporter.progress * 100))%")
-                        .font(.system(.title, design: .monospaced))
-                        .foregroundColor(.green)
-                    
-                    Text("Please wait, this may take a few minutes...")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    
-                    Spacer()
-                }
-            } else if let exportedURL = exporter.exportedURL {
-                // Success View
-                VStack(spacing: 16) {
-                    Spacer()
-                    
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 50))
-                        .foregroundColor(.green)
-                    
-                    Text("Export Complete!")
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(.white)
-                    
-                    Text(exportedURL.path)
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                    
-                    HStack(spacing: 12) {
-                        Button("Show in Finder") {
-                            NSWorkspace.shared.selectFile(exportedURL.path, inFileViewerRootedAtPath: "")
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(8)
-                        
-                        Button("Publish to YouTube") {
-                            onPublishToYouTube?(exportedURL, false)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.red)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-
-                        Button("Schedule to YouTube") {
-                            onPublishToYouTube?(exportedURL, true)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
-                        
-                        Button("Done") {
-                            isPresented = false
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.green)
-                        .foregroundColor(.black)
-                        .cornerRadius(8)
-                    }
-                    
-                    Spacer()
-                }
-            } else {
-                // Settings View
+            // Export Settings Form
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Format").foregroundColor(.gray).font(.caption.weight(.semibold))
                     Picker("", selection: $selectedFormat) {
@@ -201,8 +114,20 @@ struct ExportModalView: View {
                     .background(Color.white.opacity(0.1))
                     .cornerRadius(8)
                     
-                    Button("Start Export") {
-                        startExport()
+                    Button("Add to Queue") {
+                        addToQueue()
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Color.purple.opacity(0.8))
+                    .foregroundColor(.white)
+                    .font(.system(size: 14, weight: .bold))
+                    .cornerRadius(8)
+                    
+                    Button("Export Now") {
+                        addToQueue(priority: .high)
+                        NotificationCenter.default.post(name: NSNotification.Name("ShowMediaExporter"), object: nil)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 20)
@@ -213,7 +138,6 @@ struct ExportModalView: View {
                     .cornerRadius(8)
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
-            }
         }
         .padding(30)
         .frame(width: 480, height: 450)
@@ -226,50 +150,9 @@ struct ExportModalView: View {
             let projectName = sanitizedName.isEmpty ? "OneLyrics_Export" : sanitizedName
             outputPath = NSHomeDirectory() + "/Desktop/\(projectName).\(ext)"
         }
-        .onChange(of: exporter.isExporting) { isExporting in
-            if !isExporting, let url = exporter.exportedURL, uploadToYouTube {
-                prepareYouTubeUpload(videoURL: url)
-            }
-        }
     }
     
-    private func prepareYouTubeUpload(videoURL: URL) {
-        let directory = videoURL.deletingLastPathComponent()
-        let baseName = videoURL.deletingPathExtension().lastPathComponent
-        
-        // 1. Generate Metadata TXT
-        let metadataURL = directory.appendingPathComponent("\(baseName)_Metadata.txt")
-        let title = store.state.title.isEmpty ? "My Song" : store.state.title
-        let description = """
-        Title: \(title)
-        
-        Lyrics video generated by OneLyrics.
-        """
-        try? description.write(to: metadataURL, atomically: true, encoding: .utf8)
-        
-        // 2. Generate Thumbnail
-        Task {
-            if let img = await ProjectThumbnailExporter.generateThumbnail(
-                state: store.state,
-                textSize: 200,
-                glow: store.state.typography.glow,
-                shadowOffset: .zero
-            ) {
-                if let cgImage = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                    let rep = NSBitmapImageRep(cgImage: cgImage)
-                    if let data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9]) {
-                        let thumbURL = directory.appendingPathComponent("\(baseName)_Thumbnail.jpg")
-                        try? data.write(to: thumbURL)
-                    }
-                }
-            }
-            
-            // 3. Open Finder and Browser
-            DispatchQueue.main.async {
-                NSWorkspace.shared.activateFileViewerSelecting([videoURL, metadataURL])
-            }
-        }
-    }
+
     
     private func chooseOutputPath() {
         let panel = NSSavePanel()
@@ -285,7 +168,7 @@ struct ExportModalView: View {
         }
     }
     
-    private func startExport() {
+    private func addToQueue(priority: ExportPriority = .normal) {
         let ext = selectedFormat == "MOV" ? "mov" : "mp4"
         let sanitizedName = store.state.title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
         let projectName = sanitizedName.isEmpty ? "OneLyrics_Export" : sanitizedName
@@ -297,12 +180,18 @@ struct ExportModalView: View {
             url = url.deletingPathExtension().appendingPathExtension(ext)
         }
         
-        exporter.export(
-            store: store,
+        ExportManager.shared.addJob(
+            projectName: projectName,
+            state: store.state,
+            durationMs: store.effectiveDuration,
             format: selectedFormat,
             resolution: selectedResolution,
             bitrate: selectedBitrate,
-            outputURL: url
+            outputURL: url,
+            publishToYouTube: uploadToYouTube,
+            priority: priority
         )
+        
+        isPresented = false
     }
 }
