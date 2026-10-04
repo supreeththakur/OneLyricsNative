@@ -4,6 +4,9 @@ struct MediaExporterView: View {
     @ObservedObject var manager = ExportManager.shared
     @Environment(\.presentationMode) var presentationMode
     
+    @State private var showYouTubePublish = false
+    @State private var selectedVideoURL: URL? = nil
+    
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -12,7 +15,11 @@ struct MediaExporterView: View {
                     .font(.headline)
                 Spacer()
                 Button(action: {
-                    presentationMode.wrappedValue.dismiss()
+                    if ProcessInfo.processInfo.processName.lowercased().contains("exporter") || ProcessInfo.processInfo.arguments.contains("--exporter") {
+                        NSApplication.shared.terminate(nil)
+                    } else {
+                        presentationMode.wrappedValue.dismiss()
+                    }
                 }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.gray)
@@ -61,7 +68,10 @@ struct MediaExporterView: View {
                     if !completedJobs.isEmpty {
                         Section(header: Text("Completed").font(.subheadline).foregroundColor(.gray)) {
                             ForEach(completedJobs) { job in
-                                CompletedExportRow(job: job)
+                                CompletedExportRow(job: job) {
+                                    self.selectedVideoURL = job.outputURL
+                                    self.showYouTubePublish = true
+                                }
                             }
                             Button("Clear Completed") {
                                 manager.clearCompleted()
@@ -81,6 +91,18 @@ struct MediaExporterView: View {
                 }
             }
             .listStyle(SidebarListStyle())
+            
+            // YouTube Publish Modal Overlay
+            if showYouTubePublish {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { showYouTubePublish = false }
+                    .zIndex(100)
+                
+                YouTubePublishView(isPresented: $showYouTubePublish, videoFileURL: selectedVideoURL, initialSchedule: false)
+                    .zIndex(101)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
         }
         .frame(width: 450, height: 600)
     }
@@ -164,6 +186,7 @@ struct QueuedExportRow: View {
 
 struct CompletedExportRow: View {
     var job: ExportJob
+    var onPublish: () -> Void
     
     var body: some View {
         HStack {
@@ -177,6 +200,16 @@ struct CompletedExportRow: View {
                     .foregroundColor(.gray)
             }
             Spacer()
+            
+            Button(action: {
+                onPublish()
+            }) {
+                Image(systemName: "play.rectangle.fill")
+                    .foregroundColor(.red)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 8)
+            
             Button(action: {
                 NSWorkspace.shared.activateFileViewerSelecting([job.outputURL])
             }) {

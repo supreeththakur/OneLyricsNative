@@ -8,7 +8,6 @@ struct ContentView: View {
     @State private var showExportModal = false
     @State private var showSearchModal = false
     @State private var showYouTubePublish = false
-    @State private var showMediaExporter = false
     @State private var youtubeVideoURL: URL? = nil
     @State private var scheduleToYouTube: Bool = false
     @ObservedObject var exportManager = ExportManager.shared
@@ -59,7 +58,7 @@ struct ContentView: View {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 8) {
                         if !exportManager.jobs.isEmpty {
-                            Button(action: { showMediaExporter = true }) {
+                            Button(action: { ExportManager.shared.launchExporterApp() }) {
                                 HStack {
                                     if let active = exportManager.jobs.first(where: { $0.status == .exporting }) {
                                         ProgressView()
@@ -156,21 +155,6 @@ struct ContentView: View {
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
             
-            // Media Exporter Modal Overlay
-            if showMediaExporter {
-                Color.black.opacity(0.6)
-                    .ignoresSafeArea()
-                    .onTapGesture { showMediaExporter = false }
-                    .zIndex(100)
-                
-                MediaExporterView()
-                    .background(Color(red: 0.1, green: 0.1, blue: 0.12))
-                    .cornerRadius(16)
-                    .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: 10)
-                    .zIndex(101)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
-            }
-            
             // Search Modal Overlay
             if showSearchModal {
                 Color.black.opacity(0.6)
@@ -227,9 +211,6 @@ struct ContentView: View {
                 let newBlock = LyricBlock(id: UUID(), text: text, startMs: store.currentTimeMs, endMs: store.currentTimeMs + 3000)
                 store.state.lyrics.append(newBlock)
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ShowMediaExporter"))) { _ in
-            showMediaExporter = true
         }
     }
 }

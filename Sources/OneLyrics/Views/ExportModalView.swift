@@ -117,7 +117,6 @@ struct ExportModalView: View {
                     
                     Button("Export Now") {
                         addToQueue(priority: .high)
-                        NotificationCenter.default.post(name: NSNotification.Name("ShowMediaExporter"), object: nil)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 20)
@@ -182,6 +181,9 @@ struct ExportModalView: View {
             priority: priority
         )
         
+        ExportManager.shared.launchExporterApp()
+        
         isPresented = false
     }
+    
 }

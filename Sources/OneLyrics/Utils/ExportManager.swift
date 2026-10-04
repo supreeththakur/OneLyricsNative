@@ -50,6 +50,8 @@ class ExportManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var isProcessing = false
     
+    var isWorker = false
+    
     private let queueFileURL = URL(fileURLWithPath: NSHomeDirectory())
         .appendingPathComponent("Documents")
         .appendingPathComponent("OneLyricsNative")
@@ -64,7 +66,23 @@ class ExportManager: ObservableObject {
                 jobs[i].error = "Interrupted during export"
             }
         }
+    }
+    
+    func startProcessing() {
+        isWorker = true
         processNextIfAvailable()
+        
+        // Setup polling to watch for jobs added by the main app
+        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            // Reload the queue. loadQueue is now smart enough to not overwrite the active job.
+            self.loadQueue()
+            
+            if !self.isProcessing {
+                self.processNextIfAvailable()
+            }
+        }
     }
     
     func addJob(projectName: String, state: ProjectState, durationMs: Double, format: String, resolution: String, bitrate: String, outputURL: URL, publishToYouTube: Bool = false, priority: ExportPriority = .normal) {
@@ -83,6 +101,43 @@ class ExportManager: ObservableObject {
             self.jobs.append(job)
             self.saveQueue()
             self.processNextIfAvailable()
+        }
+    }
+    
+    func launchExporterApp() {
+        let workspace = NSWorkspace.shared
+        // Try to find if it's already running
+        let runningApps = workspace.runningApplications
+        if let existingApp = runningApps.first(where: { $0.localizedName == "OneLyricsExporter" }) {
+            existingApp.activate(options: .activateIgnoringOtherApps)
+            return
+        }
+        
+        // Try to launch by bundle name if it's installed
+        if let appURL = workspace.urlForApplication(withBundleIdentifier: "com.onelyrics.exporter") ?? workspace.urlForApplication(withBundleIdentifier: "OneLyricsExporter") {
+            try? workspace.launchApplication(at: appURL, options: [], configuration: [:])
+            return
+        }
+        
+        // Fallback: spawn process from same location
+        let executablePath = Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first!
+        let process = Process()
+        
+        // Check if we are running from .app bundle
+        let exporterAppPath = URL(fileURLWithPath: executablePath)
+            .deletingLastPathComponent() // MacOS
+            .deletingLastPathComponent() // Contents
+            .deletingLastPathComponent() // OneLyrics.app
+            .deletingLastPathComponent() // release
+            .appendingPathComponent("OneLyricsExporter.app")
+        
+        if FileManager.default.fileExists(atPath: exporterAppPath.path) {
+            try? workspace.launchApplication(at: exporterAppPath, options: [], configuration: [:])
+        } else {
+            // Raw binary fallback
+            process.executableURL = URL(fileURLWithPath: executablePath)
+            process.arguments = ["--exporter"]
+            try? process.run()
         }
     }
     
@@ -121,7 +176,7 @@ class ExportManager: ObservableObject {
     }
     
     private func processNextIfAvailable() {
-        guard !isProcessing else { return }
+        guard isWorker, !isProcessing else { return }
         
         let eligibleJobs = jobs.filter { $0.status == .queued }
             .sorted { (job1, job2) in
@@ -221,7 +276,15 @@ class ExportManager: ObservableObject {
     private func loadQueue() {
         if let data = try? Data(contentsOf: queueFileURL),
            let loaded = try? JSONDecoder().decode([ExportJob].self, from: data) {
-            self.jobs = loaded
+            
+            if isWorker && isProcessing {
+                let activeJobs = self.jobs.filter { $0.status == .exporting || $0.status == .paused }
+                var merged = loaded.filter { diskJob in !activeJobs.contains(where: { $0.id == diskJob.id }) }
+                merged.append(contentsOf: activeJobs)
+                self.jobs = merged
+            } else {
+                self.jobs = loaded
+            }
         }
     }
 }

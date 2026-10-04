@@ -4,6 +4,19 @@ import AppKit
 import Combine
 
 @main
+struct AppLauncher {
+    static func main() {
+        let procName = ProcessInfo.processInfo.processName
+        let args = ProcessInfo.processInfo.arguments
+        
+        if procName.lowercased().contains("exporter") || args.contains("--exporter") {
+            OneLyricsExporterApp.main()
+        } else {
+            OneLyricsNativeApp.main()
+        }
+    }
+}
+
 struct OneLyricsNativeApp: App {
     @StateObject private var projectManager = ProjectManager()
     @State private var activeProject: ProjectState? = nil
