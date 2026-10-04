@@ -5,7 +5,6 @@ struct ExportModalView: View {
     @EnvironmentObject var store: ProjectStore
     @Binding var isPresented: Bool
     var onPublishToYouTube: ((URL, Bool) -> Void)? = nil
-    var onPublishToYouTube: ((URL, Bool) -> Void)? = nil
     @AppStorage("export_selectedFormat") private var selectedFormat = "MP4"
     @AppStorage("export_selectedResolution") private var selectedResolution = "1080p"
     @AppStorage("export_selectedBitrate") private var selectedBitrate = "High"
@@ -91,15 +90,6 @@ struct ExportModalView: View {
                     .foregroundColor(.white)
                     .tint(.red)
                     .padding(.top, 4)
-                
-                if let error = exporter.exportError {
-                    Text("⚠️ \(error)")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .padding(8)
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(6)
-                }
                 
                 Spacer()
                 
