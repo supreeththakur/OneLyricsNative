@@ -60,7 +60,7 @@ struct PlayerView: View {
                     }
                     
                     if let currentLyric = store.state.lyrics.first(where: { store.currentTimeMs >= $0.startMs && store.currentTimeMs <= $0.endMs }) {
-                        let text = currentLyric.text
+                        let text = currentLyric.displayText
                         let start = currentLyric.startMs
                         let end = currentLyric.endMs
                         let t = store.currentTimeMs
