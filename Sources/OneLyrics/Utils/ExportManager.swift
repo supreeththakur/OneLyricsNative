@@ -47,10 +47,14 @@ class ExportManager: ObservableObject {
     @Published var jobs: [ExportJob] = []
     
     private var currentExporter: VideoExporter?
-    private var cancellables = Set<AnyCancellable>()
+    private var currentJobId: UUID? = nil
+    private var currentJobCancellables = Set<AnyCancellable>()
     private var isProcessing = false
     
     var isWorker = false
+    
+    /// Serial queue to synchronize all file I/O to prevent races
+    private let fileQueue = DispatchQueue(label: "com.onelyrics.exportmanager.filequeue")
     
     private let queueFileURL = URL(fileURLWithPath: NSHomeDirectory())
         .appendingPathComponent("Documents")
@@ -58,23 +62,22 @@ class ExportManager: ObservableObject {
         .appendingPathComponent("export_queue.json")
     
     init() {
-        loadQueue()
-        // Mark interrupted jobs as failed on startup (only worker should really do this, but harmless)
+        self.jobs = readDiskJobsUnsafe()
+        // Mark interrupted jobs as failed on startup
         for i in 0..<jobs.count {
             if jobs[i].status == .exporting || jobs[i].status == .paused {
                 jobs[i].status = .failed
                 jobs[i].error = "Interrupted during export"
             }
         }
-        
+        saveQueueToDisk()
         startPolling()
     }
     
     private func startPolling() {
         Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            
-            self.loadQueue()
+            self.mergeFromDisk()
             
             if self.isWorker && !self.isProcessing {
                 self.processNextIfAvailable()
@@ -86,6 +89,8 @@ class ExportManager: ObservableObject {
         isWorker = true
         processNextIfAvailable()
     }
+    
+    // MARK: - Adding Jobs (thread-safe)
     
     func addJob(projectName: String, state: ProjectState, durationMs: Double, format: String, resolution: String, bitrate: String, outputURL: URL, publishToYouTube: Bool = false, priority: ExportPriority = .normal) {
         let job = ExportJob(
@@ -99,11 +104,17 @@ class ExportManager: ObservableObject {
             priority: priority,
             publishToYouTube: publishToYouTube
         )
+        
+        // Atomic file-level append: read disk, append, write back — all on the serial file queue
+        fileQueue.sync {
+            var diskJobs = self.readDiskJobsUnsafe()
+            diskJobs.append(job)
+            self.writeDiskJobsUnsafe(diskJobs)
+        }
+        
+        // Now merge the new state into our in-memory array
         DispatchQueue.main.async {
-            self.loadQueue()
-            self.jobs.append(job)
-            self.saveQueue()
-            self.processNextIfAvailable()
+            self.mergeFromDisk()
         }
     }
     
@@ -146,13 +157,15 @@ class ExportManager: ObservableObject {
     
     func cancelJob(id: UUID) {
         if let index = jobs.firstIndex(where: { $0.id == id }) {
-            if jobs[index].status == .exporting {
+            if jobs[index].status == .exporting && currentJobId == id {
                 currentExporter?.cancel()
                 currentExporter = nil
+                currentJobCancellables.removeAll()
+                currentJobId = nil
                 isProcessing = false
             }
             jobs[index].status = .cancelled
-            saveQueue()
+            saveQueueToDisk()
             processNextIfAvailable()
         }
     }
@@ -162,7 +175,7 @@ class ExportManager: ObservableObject {
             jobs[index].status = .queued
             jobs[index].error = nil
             jobs[index].progress = 0
-            saveQueue()
+            saveQueueToDisk()
             processNextIfAvailable()
         }
     }
@@ -170,13 +183,15 @@ class ExportManager: ObservableObject {
     func removeJob(id: UUID) {
         cancelJob(id: id)
         jobs.removeAll(where: { $0.id == id })
-        saveQueue()
+        saveQueueToDisk()
     }
     
     func clearCompleted() {
         jobs.removeAll(where: { $0.status == .completed })
-        saveQueue()
+        saveQueueToDisk()
     }
+    
+    // MARK: - Processing
     
     private func processNextIfAvailable() {
         guard isWorker, !isProcessing else { return }
@@ -197,29 +212,36 @@ class ExportManager: ObservableObject {
         guard let index = jobs.firstIndex(where: { $0.id == job.id }) else { return }
         
         isProcessing = true
+        currentJobId = job.id
         jobs[index].status = .exporting
         jobs[index].progress = 0
-        saveQueue()
+        saveQueueToDisk()
         
         let exporter = VideoExporter()
         self.currentExporter = exporter
         
+        // Dedicated cancellable set for THIS job only
+        var jobCancellables = Set<AnyCancellable>()
+        
+        let jobId = job.id
+        
         exporter.$progress
             .receive(on: DispatchQueue.main)
             .sink { [weak self] p in
-                if let idx = self?.jobs.firstIndex(where: { $0.id == job.id }) {
-                    self?.jobs[idx].progress = p
+                guard let self = self, self.currentJobId == jobId else { return }
+                if let idx = self.jobs.firstIndex(where: { $0.id == jobId }) {
+                    self.jobs[idx].progress = p
                 }
             }
-            .store(in: &cancellables)
+            .store(in: &jobCancellables)
             
         exporter.$isExporting
             .receive(on: DispatchQueue.main)
             .dropFirst()
             .sink { [weak self] isExporting in
-                guard let self = self else { return }
+                guard let self = self, self.currentJobId == jobId else { return }
                 if !isExporting {
-                    if let idx = self.jobs.firstIndex(where: { $0.id == job.id }) {
+                    if let idx = self.jobs.firstIndex(where: { $0.id == jobId }) {
                         if self.jobs[idx].status == .cancelled {
                             // Already cancelled manually
                         } else if let error = exporter.exportError {
@@ -237,13 +259,16 @@ class ExportManager: ObservableObject {
                         }
                     }
                     self.currentExporter = nil
-                    self.cancellables.removeAll()
+                    self.currentJobId = nil
+                    self.currentJobCancellables.removeAll()
                     self.isProcessing = false
-                    self.saveQueue()
+                    self.saveQueueToDisk()
                     self.processNextIfAvailable()
                 }
             }
-            .store(in: &cancellables)
+            .store(in: &jobCancellables)
+        
+        self.currentJobCancellables = jobCancellables
             
         // Start background export
         exporter.export(
@@ -257,37 +282,88 @@ class ExportManager: ObservableObject {
     }
     
     private func showNotification(title: String, body: String) {
-        let center = UNUserNotificationCenter.current()
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        center.add(request)
+        let script = "display notification \"\(body)\" with title \"\(title)\""
+        let task = Process()
+        task.launchPath = "/usr/bin/osascript"
+        task.arguments = ["-e", script]
+        try? task.run()
     }
     
-    // Persistence
-    private func saveQueue() {
+    // MARK: - Persistence (Thread-Safe)
+    
+    /// Save the current in-memory jobs array to disk atomically
+    private func saveQueueToDisk() {
+        let jobsSnapshot = self.jobs
+        fileQueue.async {
+            let dir = self.queueFileURL.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            if let data = try? JSONEncoder().encode(jobsSnapshot) {
+                try? data.write(to: self.queueFileURL, options: .atomic)
+            }
+        }
+    }
+    
+    /// Merge disk state into memory, preserving any in-flight job's progress/status
+    private func mergeFromDisk() {
+        let diskJobs: [ExportJob] = fileQueue.sync {
+            return self.readDiskJobsUnsafe()
+        }
+        
+        guard !diskJobs.isEmpty || !jobs.isEmpty else { return }
+        
+        // Build merged list: for each job ID that exists on disk or in memory, pick the right version
+        var mergedById: [UUID: ExportJob] = [:]
+        
+        // Start with disk state
+        for job in diskJobs {
+            mergedById[job.id] = job
+        }
+        
+        // Overlay in-memory state for any job that is currently being actively managed
+        for job in jobs {
+            if job.status == .exporting && job.id == currentJobId {
+                // This is the active export — always keep our in-memory version (has live progress)
+                mergedById[job.id] = job
+            } else if job.status == .exporting || job.status == .paused {
+                // We think it's exporting but it's not OUR current job — keep disk version
+                // (this handles stale state from a previous crash)
+            }
+            // For queued/completed/failed/cancelled — disk is the source of truth
+        }
+        
+        let merged = Array(mergedById.values).sorted { $0.createdAt < $1.createdAt }
+        
+        if merged != jobs {
+            self.jobs = merged
+        }
+    }
+    
+    /// Read jobs from disk — MUST be called on fileQueue
+    private func readDiskJobsUnsafe() -> [ExportJob] {
+        guard let data = try? Data(contentsOf: queueFileURL),
+              let loaded = try? JSONDecoder().decode([ExportJob].self, from: data) else {
+            return []
+        }
+        return loaded
+    }
+    
+    /// Write jobs to disk — MUST be called on fileQueue
+    private func writeDiskJobsUnsafe(_ jobs: [ExportJob]) {
         let dir = queueFileURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         if let data = try? JSONEncoder().encode(jobs) {
-            try? data.write(to: queueFileURL)
+            try? data.write(to: queueFileURL, options: .atomic)
         }
     }
-    
-    private func loadQueue() {
-        if let data = try? Data(contentsOf: queueFileURL),
-           let loaded = try? JSONDecoder().decode([ExportJob].self, from: data) {
-            
-            if isWorker && isProcessing {
-                let activeJobs = self.jobs.filter { $0.status == .exporting || $0.status == .paused }
-                var merged = loaded.filter { diskJob in !activeJobs.contains(where: { $0.id == diskJob.id }) }
-                merged.append(contentsOf: activeJobs)
-                self.jobs = merged
-            } else {
-                self.jobs = loaded
-            }
-        }
+}
+
+// Make ExportJob Equatable so we can compare arrays for change detection
+extension ExportJob: Equatable {
+    static func == (lhs: ExportJob, rhs: ExportJob) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.status == rhs.status &&
+               lhs.progress == rhs.progress &&
+               lhs.error == rhs.error &&
+               lhs.completedAt == rhs.completedAt
     }
 }
