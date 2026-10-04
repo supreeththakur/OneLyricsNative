@@ -8,13 +8,22 @@ The suite is now divided into two powerful standalone applications:
 
 ## 🚀 Features
 
-* **Standalone Exporter Suite:** Manage all your active, queued, and completed renders in a dedicated, beautifully crafted macOS interface with folder-like hierarchies, auto-resume capabilities, job prioritization, and fail-safe recovery.
 * **MP3 Auto-Conversion:** Automatically converts unsupported audio files (like MP3) to M4A for seamless timeline scrubbing and guaranteed `AVAssetWriter` export compatibility.
 * **Native Video Exporting:** Export your lyric videos natively using `AVAssetWriter` with zero deadlocks. Features perfectly interleaved audio/video channels and high-performance, hardware-accelerated rendering.
 * **Dynamic Timeline UI:** A professional NLE-style timeline that scrolls buttery smooth in perfect sync with the playhead during playback, powered by direct AppKit (`NSScrollView`) integration for zero UI lag.
 * **WYSIWYG Typography Scaling:** Lyrics text dynamically scales perfectly relative to a 16:9 1080p canvas using accurate proportions, ensuring what you see in the editor is exactly what gets exported.
 * **Customizable Shadow/Glow:** High-end typography features including adjustable fonts, sizing, glow intensity, and real-time previewing.
 * **SRT Parsing:** Easily import, edit, and sync LRC/SRT files.
+
+## 🎬 The Exporter Engine (New in v2.0)
+
+With the release of v2.0, the render engine has been completely decoupled from the main editor into its own lightweight, highly optimized standalone application: **OneLyrics Exporter**.
+
+* **Dedicated UI:** A beautifully crafted interface strictly for managing your render queue, featuring premium typography and fluid interactions.
+* **Smart Organization:** Projects are automatically grouped by export dates into a folder-like hierarchy, allowing you to easily browse through previously completed jobs.
+* **Non-Blocking Workflow:** Send projects straight from the main OneLyrics app directly into the Exporter's queue. You can continue editing new projects without experiencing any lag or frame-drops while videos render in the background.
+* **Robust Job Management:** Features automatic state recovery, job pausing, instant retry capabilities for failed exports, and priority-based queue management.
+* **Visual Thumbnails & Progress:** Track active jobs with real-time percentage indicators and instantly preview completed videos with embedded high-resolution thumbnails.
 
 ## 📦 Installation
 
