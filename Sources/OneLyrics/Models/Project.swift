@@ -11,6 +11,25 @@ struct LyricBlock: Identifiable, Codable {
     var displayText: String {
         return isTransliteratedActive ? (transliteratedText ?? text) : text
     }
+    
+    init(id: UUID = UUID(), text: String, transliteratedText: String? = nil, isTransliteratedActive: Bool = false, startMs: Double, endMs: Double) {
+        self.id = id
+        self.text = text
+        self.transliteratedText = transliteratedText
+        self.isTransliteratedActive = isTransliteratedActive
+        self.startMs = startMs
+        self.endMs = endMs
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        text = try container.decode(String.self, forKey: .text)
+        transliteratedText = try container.decodeIfPresent(String.self, forKey: .transliteratedText)
+        isTransliteratedActive = try container.decodeIfPresent(Bool.self, forKey: .isTransliteratedActive) ?? false
+        startMs = try container.decode(Double.self, forKey: .startMs)
+        endMs = try container.decode(Double.self, forKey: .endMs)
+    }
 }
 
 enum AnimationStyle: String, Codable, CaseIterable {
