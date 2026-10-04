@@ -174,12 +174,33 @@ class ProjectStore: ObservableObject {
         let oldState = self.state
         self.registerUndo(oldState: oldState)
         
-        self.state.lyrics = blocks
+        var newBlocks = blocks
+        if state.enableAutoTransliteration {
+            for i in 0..<newBlocks.count {
+                let lang = TransliterationEngine.shared.detectLanguage(text: newBlocks[i].text)
+                if lang == .hindi || lang == .kannada {
+                    newBlocks[i].transliteratedText = TransliterationEngine.shared.transliterate(text: newBlocks[i].text)
+                    newBlocks[i].isTransliteratedActive = state.showTransliteratedLyrics
+                }
+            }
+        }
+        
+        self.state.lyrics = newBlocks
     }
     
     func addLyric(_ lyric: LyricBlock) {
         let oldState = self.state
-        state.lyrics.append(lyric)
+        var newLyric = lyric
+        
+        if state.enableAutoTransliteration {
+            let lang = TransliterationEngine.shared.detectLanguage(text: newLyric.text)
+            if lang == .hindi || lang == .kannada {
+                newLyric.transliteratedText = TransliterationEngine.shared.transliterate(text: newLyric.text)
+                newLyric.isTransliteratedActive = state.showTransliteratedLyrics
+            }
+        }
+        
+        state.lyrics.append(newLyric)
         state.lyrics.sort { $0.startMs < $1.startMs }
         registerUndo(oldState: oldState)
     }
@@ -199,9 +220,58 @@ class ProjectStore: ObservableObject {
         if let index = state.lyrics.firstIndex(where: { $0.id == id }) {
             if state.lyrics[index].text != newText {
                 state.lyrics[index].text = newText
+                
+                if state.enableAutoTransliteration {
+                    let lang = TransliterationEngine.shared.detectLanguage(text: newText)
+                    if lang == .hindi || lang == .kannada {
+                        state.lyrics[index].transliteratedText = TransliterationEngine.shared.transliterate(text: newText)
+                        state.lyrics[index].isTransliteratedActive = state.showTransliteratedLyrics
+                    } else {
+                        state.lyrics[index].transliteratedText = nil
+                        state.lyrics[index].isTransliteratedActive = false
+                    }
+                }
+                
                 registerUndo(oldState: oldState)
             }
         }
+    }
+    
+    func updateTransliteratedText(id: UUID, newText: String) {
+        let oldState = self.state
+        if let index = state.lyrics.firstIndex(where: { $0.id == id }) {
+            state.lyrics[index].transliteratedText = newText
+            registerUndo(oldState: oldState)
+        }
+    }
+    
+    func toggleTransliterationVisibility(show: Bool) {
+        let oldState = self.state
+        state.showTransliteratedLyrics = show
+        for i in 0..<state.lyrics.count {
+            if state.lyrics[i].transliteratedText != nil {
+                state.lyrics[i].isTransliteratedActive = show
+            }
+        }
+        registerUndo(oldState: oldState)
+    }
+    
+    func toggleAutoTransliteration(enable: Bool) {
+        let oldState = self.state
+        state.enableAutoTransliteration = enable
+        // If enabling, we might want to auto transliterate all existing?
+        if enable {
+            for i in 0..<state.lyrics.count {
+                if state.lyrics[i].transliteratedText == nil {
+                    let lang = TransliterationEngine.shared.detectLanguage(text: state.lyrics[i].text)
+                    if lang == .hindi || lang == .kannada {
+                        state.lyrics[i].transliteratedText = TransliterationEngine.shared.transliterate(text: state.lyrics[i].text)
+                        state.lyrics[i].isTransliteratedActive = state.showTransliteratedLyrics
+                    }
+                }
+            }
+        }
+        registerUndo(oldState: oldState)
     }
     
     func removeLyric(id: UUID) {

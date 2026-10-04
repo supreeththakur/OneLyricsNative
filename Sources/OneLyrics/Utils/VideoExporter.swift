@@ -320,15 +320,15 @@ class VideoExporter: ObservableObject {
                 // Pre-cache all text images to ensure zero allocation inside the frame loop
                 for lyric in lyrics {
                     if typography.animationStyle == .typewriter {
-                        for i in 1...lyric.text.count {
-                            let sub = String(lyric.text.prefix(i))
+                        for i in 1...lyric.displayText.count {
+                            let sub = String(lyric.displayText.prefix(i))
                             if lyricImageCache[sub] == nil {
                                 lyricImageCache[sub] = generateTextCI(sub)
                             }
                         }
                     } else {
-                        if lyricImageCache[lyric.text] == nil {
-                            lyricImageCache[lyric.text] = generateTextCI(lyric.text)
+                        if lyricImageCache[lyric.displayText] == nil {
+                            lyricImageCache[lyric.displayText] = generateTextCI(lyric.displayText)
                         }
                     }
                 }
@@ -498,10 +498,10 @@ class VideoExporter: ObservableObject {
                                 if anim == .typewriter {
                                     let revealDuration = min((end - start) * 0.5, 1500)
                                     let progress = max(0, min(1, (t - start) / revealDuration))
-                                    let charCount = Int(progress * Double(currentLyric.text.count))
-                                    txtToDraw = String(currentLyric.text.prefix(charCount))
+                                    let charCount = Int(progress * Double(currentLyric.displayText.count))
+                                    txtToDraw = String(currentLyric.displayText.prefix(charCount))
                                 } else {
-                                    txtToDraw = currentLyric.text
+                                    txtToDraw = currentLyric.displayText
                                 }
                                 
                                 var textCI = lyricImageCache[txtToDraw]

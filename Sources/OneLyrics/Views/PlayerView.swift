@@ -139,13 +139,21 @@ struct PlayerView: View {
                         
                         if editingLyricId == currentLyric.id {
                             TextField("Lyric Text", text: $editingText, onCommit: {
-                                store.updateLyricText(id: currentLyric.id, newText: editingText)
+                                if currentLyric.isTransliteratedActive {
+                                    store.updateTransliteratedText(id: currentLyric.id, newText: editingText)
+                                } else {
+                                    store.updateLyricText(id: currentLyric.id, newText: editingText)
+                                }
                                 editingLyricId = nil
                             })
                             .focused($isTextFieldFocused)
                             .onChange(of: isTextFieldFocused) { isFocused in
                                 if !isFocused && editingLyricId == currentLyric.id {
-                                    store.updateLyricText(id: currentLyric.id, newText: editingText)
+                                    if currentLyric.isTransliteratedActive {
+                                        store.updateTransliteratedText(id: currentLyric.id, newText: editingText)
+                                    } else {
+                                        store.updateLyricText(id: currentLyric.id, newText: editingText)
+                                    }
                                     editingLyricId = nil
                                 }
                             }
@@ -183,7 +191,7 @@ struct PlayerView: View {
                             .contentShape(Rectangle())
                             .onTapGesture(count: 2) {
                                 editingLyricId = currentLyric.id
-                                editingText = currentLyric.text
+                                editingText = currentLyric.isTransliteratedActive ? (currentLyric.transliteratedText ?? currentLyric.text) : currentLyric.text
                                 if store.isPlaying {
                                     store.togglePlayPause()
                                 }

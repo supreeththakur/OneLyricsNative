@@ -40,6 +40,7 @@ struct YouTubePublishView: View {
     @State private var uploadError: String?
     @State private var uploadSuccess: Bool = false
     @State private var uploadedVideoId: String?
+    @State private var editingItemId: UUID? = nil
     
     enum PublishTab: String, CaseIterable {
         case publish = "Publish"
@@ -68,6 +69,16 @@ struct YouTubePublishView: View {
                 case .settings:
                     settingsContent
                 }
+            }
+            
+            if let editId = editingItemId {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { editingItemId = nil }
+                    .zIndex(200)
+                YouTubeEditItemView(itemId: editId, onClose: { editingItemId = nil })
+                    .zIndex(201)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
         }
         .frame(width: 620, height: 680)
@@ -694,6 +705,39 @@ struct YouTubePublishView: View {
             
             // Actions
             HStack(spacing: 4) {
+                if item.status == .draft || item.status == .ready || item.status == .queued {
+                    if let index = queueManager.queue.firstIndex(where: { $0.id == item.id }) {
+                        if index > 0 {
+                            Button(action: { queueManager.reorderQueue(from: IndexSet(integer: index), to: index - 1) }) {
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.gray)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Move Up")
+                        }
+                        
+                        if index < queueManager.queue.count - 1 {
+                            Button(action: { queueManager.reorderQueue(from: IndexSet(integer: index), to: index + 2) }) {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.gray)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Move Down")
+                        }
+                    }
+                }
+                if item.status == .uploading || item.status == .processing {
+                    Button(action: { queueManager.cancelItem(id: item.id) }) {
+                        Image(systemName: "xmark.circle")
+                            .font(.system(size: 11))
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Cancel")
+                }
+                
                 if item.status == .failed {
                     Button(action: { queueManager.retryItem(id: item.id) }) {
                         Image(systemName: "arrow.clockwise")
@@ -701,15 +745,25 @@ struct YouTubePublishView: View {
                             .foregroundColor(.orange)
                     }
                     .buttonStyle(.plain)
+                    .help("Retry")
                 }
                 
-                if item.status != .uploading && item.status != .published {
+                Button(action: { editingItemId = item.id }) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 11))
+                        .foregroundColor(.blue)
+                }
+                .buttonStyle(.plain)
+                .help("Edit & Reschedule")
+                
+                if item.status != .uploading && item.status != .processing {
                     Button(action: { queueManager.removeFromQueue(id: item.id) }) {
                         Image(systemName: "trash")
                             .font(.system(size: 11))
                             .foregroundColor(.red.opacity(0.7))
                     }
                     .buttonStyle(.plain)
+                    .help("Remove")
                 }
             }
         }
@@ -803,6 +857,14 @@ struct YouTubePublishView: View {
                                 }
                                 
                                 Spacer()
+                                
+                                Button(action: { editingItemId = item.id }) {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.blue)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.trailing, 4)
                                 
                                 statusBadge(item.status)
                             }

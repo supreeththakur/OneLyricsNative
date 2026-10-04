@@ -3,8 +3,14 @@ import Foundation
 struct LyricBlock: Identifiable, Codable {
     var id: UUID = UUID()
     var text: String
+    var transliteratedText: String?
+    var isTransliteratedActive: Bool = false
     var startMs: Double
     var endMs: Double
+    
+    var displayText: String {
+        return isTransliteratedActive ? (transliteratedText ?? text) : text
+    }
 }
 
 enum AnimationStyle: String, Codable, CaseIterable {
@@ -97,6 +103,8 @@ struct ProjectState: Codable, Identifiable {
     var templateId: String
     var typography: TypographyConfig
     var mediaConfig: MediaConfig = MediaConfig()
+    var enableAutoTransliteration: Bool = true
+    var showTransliteratedLyrics: Bool = true
     
     init() {
         let defId = TemplateManager.defaultTemplate
@@ -106,6 +114,8 @@ struct ProjectState: Codable, Identifiable {
         self.typography = conf
         self.createdAt = Date()
         self.lastModified = Date()
+        self.enableAutoTransliteration = true
+        self.showTransliteratedLyrics = true
     }
     
     init(from decoder: Decoder) throws {
@@ -122,5 +132,7 @@ struct ProjectState: Codable, Identifiable {
         templateId = try container.decodeIfPresent(String.self, forKey: .templateId) ?? TemplateManager.defaultTemplate
         typography = try container.decodeIfPresent(TypographyConfig.self, forKey: .typography) ?? TypographyConfig()
         mediaConfig = try container.decodeIfPresent(MediaConfig.self, forKey: .mediaConfig) ?? MediaConfig()
+        enableAutoTransliteration = try container.decodeIfPresent(Bool.self, forKey: .enableAutoTransliteration) ?? true
+        showTransliteratedLyrics = try container.decodeIfPresent(Bool.self, forKey: .showTransliteratedLyrics) ?? true
     }
 }

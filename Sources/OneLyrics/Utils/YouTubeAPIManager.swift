@@ -304,9 +304,7 @@ class YouTubeAPIManager: ObservableObject {
         }
     }
     
-    // MARK: - Update Video Metadata
-    
-    func updateVideoMetadata(videoId: String, title: String, description: String, tags: [String], category: YouTubeCategory, completion: @escaping (Bool, String?) -> Void) {
+    func updateVideoMetadata(videoId: String, title: String, description: String, tags: [String], category: YouTubeCategory, visibility: YouTubeVisibility, publishAt: Date?, completion: @escaping (Bool, String?) -> Void) {
         auth.refreshTokenIfNeeded { token in
             guard let token = token else {
                 completion(false, "Not authenticated")
@@ -321,11 +319,20 @@ class YouTubeAPIManager: ObservableObject {
                 return
             }
             
-            let url = URL(string: "https://www.googleapis.com/youtube/v3/videos?part=snippet")!
+            let url = URL(string: "https://www.googleapis.com/youtube/v3/videos?part=snippet,status")!
             var request = URLRequest(url: url)
             request.httpMethod = "PUT"
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            var statusDict: [String: Any] = [:]
+            if let date = publishAt {
+                statusDict["privacyStatus"] = "private"
+                let formatter = ISO8601DateFormatter()
+                statusDict["publishAt"] = formatter.string(from: date)
+            } else {
+                statusDict["privacyStatus"] = visibility.rawValue
+            }
             
             let body: [String: Any] = [
                 "id": videoId,
@@ -334,7 +341,8 @@ class YouTubeAPIManager: ObservableObject {
                     "description": description,
                     "tags": tags,
                     "categoryId": category.rawValue
-                ]
+                ],
+                "status": statusDict
             ]
             
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)

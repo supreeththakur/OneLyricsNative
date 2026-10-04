@@ -163,6 +163,38 @@ struct AssetSidebar: View {
                     }
                 }
                 .padding(.top, 4)
+                
+                // Transliteration Section
+                VStack(alignment: .leading, spacing: 10) {
+                    Divider().background(Color.gray.opacity(0.3)).padding(.vertical, 4)
+                    
+                    Text("Auto Transliteration")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    Toggle(isOn: Binding(
+                        get: { store.state.enableAutoTransliteration },
+                        set: { store.toggleAutoTransliteration(enable: $0) }
+                    )) {
+                        Text("Detect Hindi & Kannada")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white)
+                    }
+                    .toggleStyle(SwitchToggleStyle(tint: .purple))
+                    
+                    if store.state.lyrics.contains(where: { $0.transliteratedText != nil }) {
+                        Toggle(isOn: Binding(
+                            get: { store.state.showTransliteratedLyrics },
+                            set: { store.toggleTransliterationVisibility(show: $0) }
+                        )) {
+                            Text("Show Transliterated")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                        }
+                        .toggleStyle(SwitchToggleStyle(tint: .orange))
+                    }
+                }
+                .padding(.top, 4)
             }
             
             Spacer()

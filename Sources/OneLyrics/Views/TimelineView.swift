@@ -333,7 +333,7 @@ struct LyricBlockView: View {
         
         ZStack(alignment: .topTrailing) {
             ZStack {
-                Text(lyric.text)
+                Text(lyric.displayText)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                     .padding(.horizontal, 8)
