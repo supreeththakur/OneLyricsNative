@@ -1,5 +1,12 @@
 import SwiftUI
 
+struct DayGroup: Identifiable {
+    var id: String { dateStr }
+    let dateStr: String
+    let date: Date
+    let projects: [ProjectState]
+}
+
 struct MediaExporterView: View {
     @ObservedObject var manager = ExportManager.shared
     @Environment(\.presentationMode) var presentationMode
@@ -10,6 +17,25 @@ struct MediaExporterView: View {
     @StateObject private var projectManager = ProjectManager()
     @State private var projectToExport: ProjectState? = nil
     @State private var projectToThumbnail: ProjectState? = nil
+    
+    @State private var expandedNotExportedDays: Set<String> = []
+    @State private var expandedExportedDays: Set<String> = []
+    @State private var didInitializeExpansions = false
+    
+    private func groupProjectsByDay(_ projects: [ProjectState]) -> [DayGroup] {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        formatter.doesRelativeDateFormatting = true
+        
+        let grouped = Dictionary(grouping: projects) { (proj: ProjectState) -> Date in
+            Calendar.current.startOfDay(for: proj.createdAt)
+        }
+        
+        return grouped.map { (date, projs) in
+            DayGroup(dateStr: formatter.string(from: date), date: date, projects: projs.sorted { $0.createdAt > $1.createdAt })
+        }.sorted { $0.date > $1.date }
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -89,26 +115,49 @@ struct MediaExporterView: View {
                         }
                     }
                     
-                    if !notExportedProjects.isEmpty {
+                    let notExportedGroups = groupProjectsByDay(notExportedProjects)
+                    let exportedGroups = groupProjectsByDay(exportedProjects)
+                    
+                    if !notExportedGroups.isEmpty {
                         Section(header: Text("Projects (Not Exported)").font(.subheadline).foregroundColor(.gray)) {
-                            ForEach(notExportedProjects, id: \.id) { project in
-                                ProjectExportRow(project: project, onExport: {
-                                    self.projectToExport = project
-                                }, onThumbnail: {
-                                    self.projectToThumbnail = project
-                                })
+                            ForEach(notExportedGroups) { group in
+                                DisclosureGroup(isExpanded: Binding(
+                                    get: { expandedNotExportedDays.contains(group.id) },
+                                    set: { isExpanding in
+                                        if isExpanding { expandedNotExportedDays.insert(group.id) }
+                                        else { expandedNotExportedDays.remove(group.id) }
+                                    }
+                                )) {
+                                    ForEach(group.projects, id: \.id) { project in
+                                        ProjectExportRow(project: project, onThumbnail: {
+                                            self.projectToThumbnail = project
+                                        })
+                                    }
+                                } label: {
+                                    Text(group.dateStr).font(.subheadline).bold()
+                                }
                             }
                         }
                     }
                     
-                    if !exportedProjects.isEmpty {
+                    if !exportedGroups.isEmpty {
                         Section(header: Text("Projects (Exported)").font(.subheadline).foregroundColor(.gray)) {
-                            ForEach(exportedProjects, id: \.id) { project in
-                                ProjectExportRow(project: project, onExport: {
-                                    self.projectToExport = project
-                                }, onThumbnail: {
-                                    self.projectToThumbnail = project
-                                })
+                            ForEach(exportedGroups) { group in
+                                DisclosureGroup(isExpanded: Binding(
+                                    get: { expandedExportedDays.contains(group.id) },
+                                    set: { isExpanding in
+                                        if isExpanding { expandedExportedDays.insert(group.id) }
+                                        else { expandedExportedDays.remove(group.id) }
+                                    }
+                                )) {
+                                    ForEach(group.projects, id: \.id) { project in
+                                        ProjectExportRow(project: project, onThumbnail: {
+                                            self.projectToThumbnail = project
+                                        })
+                                    }
+                                } label: {
+                                    Text(group.dateStr).font(.subheadline).bold()
+                                }
                             }
                         }
                     }
@@ -123,6 +172,17 @@ struct MediaExporterView: View {
                 }
             }
             .listStyle(SidebarListStyle())
+            .onAppear {
+                if !didInitializeExpansions {
+                    let notExportedGroups = groupProjectsByDay(projectManager.projects.filter { !Set(manager.jobs.filter { $0.status == .completed }.map { $0.projectName }).contains($0.title) })
+                    let exportedGroups = groupProjectsByDay(projectManager.projects.filter { Set(manager.jobs.filter { $0.status == .completed }.map { $0.projectName }).contains($0.title) })
+                    
+                    if let first = notExportedGroups.first { expandedNotExportedDays.insert(first.id) }
+                    if let first = exportedGroups.first { expandedExportedDays.insert(first.id) }
+                    
+                    didInitializeExpansions = true
+                }
+            }
             
             // YouTube Publish Modal Overlay
             if showYouTubePublish {
@@ -137,20 +197,6 @@ struct MediaExporterView: View {
             }
             
             // Export Settings Modal Overlay
-            if let project = projectToExport {
-                Color.black.opacity(0.6)
-                    .ignoresSafeArea()
-                    .onTapGesture { projectToExport = nil }
-                    .zIndex(102)
-                
-                ExportModalWrapper(project: project, isPresented: Binding(
-                    get: { projectToExport != nil },
-                    set: { if !$0 { projectToExport = nil } }
-                ))
-                .zIndex(103)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
-            }
-            
             // Thumbnail Settings Modal Overlay
             if let project = projectToThumbnail {
                 Color.black.opacity(0.6)
@@ -325,8 +371,13 @@ struct FailedExportRow: View {
 
 struct ProjectExportRow: View {
     var project: ProjectState
-    var onExport: () -> Void
     var onThumbnail: () -> Void
+    
+    @AppStorage("export_selectedFormat") private var selectedFormat = "MP4"
+    @AppStorage("export_selectedResolution") private var selectedResolution = "1080p"
+    @AppStorage("export_selectedBitrate") private var selectedBitrate = "High"
+    @AppStorage("export_outputPath") private var outputPath = ""
+    @AppStorage("export_uploadToYouTube") private var uploadToYouTube = false
     
     var body: some View {
         HStack {
@@ -345,34 +396,52 @@ struct ProjectExportRow: View {
             .buttonStyle(.plain)
             .padding(.trailing, 8)
             
-            Button("Export") {
-                onExport()
+            Button("Add Queue") {
+                queueProjectDirectly()
             }
             .buttonStyle(.plain)
             .foregroundColor(.white)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(Color.blue)
+            .background(Color.green)
             .cornerRadius(6)
         }
         .padding(.vertical, 4)
     }
-}
-
-struct ExportModalWrapper: View {
-    var project: ProjectState
-    @Binding var isPresented: Bool
     
-    @StateObject private var dummyStore = ProjectStore()
-    
-    var body: some View {
-        ExportModalView(isPresented: $isPresented)
-            .environmentObject(dummyStore)
-            .onAppear {
-                dummyStore.state = project
-            }
+    private func queueProjectDirectly() {
+        let ext = selectedFormat == "MOV" ? "mov" : "mp4"
+        let sanitizedName = project.title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
+        let projectName = sanitizedName.isEmpty ? "OneLyrics_Export" : sanitizedName
+        let finalPath = outputPath.isEmpty ? NSHomeDirectory() + "/Desktop/\(projectName).\(ext)" : outputPath
+        
+        var url = URL(fileURLWithPath: finalPath)
+        if url.pathExtension.lowercased() != ext {
+            url = url.deletingPathExtension().appendingPathExtension(ext)
+        }
+        
+        var effectiveDuration: Double = 60000
+        if project.durationMs > 0 && !project.durationMs.isNaN { 
+            effectiveDuration = project.durationMs
+        } else if let last = project.lyrics.max(by: { $0.endMs < $1.endMs }) {
+            effectiveDuration = max(last.endMs + 5000, 60000)
+        }
+        
+        ExportManager.shared.addJob(
+            projectName: projectName,
+            state: project,
+            durationMs: effectiveDuration,
+            format: selectedFormat,
+            resolution: selectedResolution,
+            bitrate: selectedBitrate,
+            outputURL: url,
+            publishToYouTube: uploadToYouTube,
+            priority: .normal
+        )
     }
 }
+
+
 
 struct ThumbnailModalWrapper: View {
     var project: ProjectState
