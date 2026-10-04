@@ -2,6 +2,7 @@
 set -e
 
 VERSION="2.0.0"
+EXPORTER_VERSION="1.0.0"
 BUILD="15"
 
 function build_and_package() {
@@ -62,7 +63,7 @@ EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
+    <string>${EXPORTER_VERSION}</string>
     <key>CFBundleVersion</key>
     <string>${BUILD}</string>
     <key>LSMinimumSystemVersion</key>
