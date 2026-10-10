@@ -134,25 +134,28 @@ class ExportManager: ObservableObject {
         }
         
         // Fallback: spawn process from same location
-        let executablePath = Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first!
-        let process = Process()
-        
         // Check if we are running from .app bundle
-        let exporterAppPath = URL(fileURLWithPath: executablePath)
-            .deletingLastPathComponent() // MacOS
-            .deletingLastPathComponent() // Contents
-            .deletingLastPathComponent() // OneLyrics.app
-            .deletingLastPathComponent() // release
-            .appendingPathComponent("OneLyricsExporter.app")
+        let bundleURL = Bundle.main.bundleURL
+        let siblingAppURL = bundleURL.deletingLastPathComponent().appendingPathComponent("OneLyricsExporter.app")
         
-        if FileManager.default.fileExists(atPath: exporterAppPath.path) {
-            try? workspace.launchApplication(at: exporterAppPath, options: [], configuration: [:])
-        } else {
-            // Raw binary fallback
-            process.executableURL = URL(fileURLWithPath: executablePath)
-            process.arguments = ["--exporter"]
-            try? process.run()
+        if FileManager.default.fileExists(atPath: siblingAppURL.path) {
+            try? workspace.launchApplication(at: siblingAppURL, options: [], configuration: [:])
+            return
         }
+        
+        // Raw binary fallback
+        let exeURL = URL(fileURLWithPath: Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first!)
+        let rawAppURL = exeURL.deletingLastPathComponent().appendingPathComponent("OneLyricsExporter.app")
+        if FileManager.default.fileExists(atPath: rawAppURL.path) {
+            try? workspace.launchApplication(at: rawAppURL, options: [], configuration: [:])
+            return
+        }
+        
+        // Process fallback if we just want to run the raw binary
+        let process = Process()
+        process.executableURL = exeURL
+        process.arguments = ["--exporter"]
+        try? process.run()
     }
     
     func cancelJob(id: UUID) {
