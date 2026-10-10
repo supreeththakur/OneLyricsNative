@@ -1,55 +1,215 @@
 import SwiftUI
-import AVFoundation
+import UniformTypeIdentifiers
+import AppKit
 
 struct VisualizerEditorView: View {
-    let onBack: () -> Void
+    @EnvironmentObject var store: ProjectStore
+    var onBack: () -> Void = {}
+    
+    @State private var showExportModal = false
+    @State private var showSearchModal = false
+    @State private var showYouTubePublish = false
+    @State private var youtubeVideoURL: URL? = nil
+    @State private var scheduleToYouTube: Bool = false
+    @ObservedObject var exportManager = ExportManager.shared
+    
+    var body: some View {
+        ZStack {
+            // Main App
+            HSplitView {
+                // Left Sidebar (Assets)
+                AssetSidebar(showSearchModal: $showSearchModal)
+                    .frame(width: 260)
+                    
+                // Main Content Area
+                VStack(spacing: 0) {
+                    // Player View
+                    PlayerView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black)
+                    
+                    // Timeline View
+                    TimelineView()
+                        .frame(height: 260)
+                }
+                .frame(minWidth: 400, maxWidth: .infinity)
+                
+                // Visualizer Inspector (Settings)
+                VisualizerInspectorSidebar()
+                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 350)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            }
+            .background(Color.black)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button(action: {
+                        store.pause()
+                        onBack()
+                    }) {
+                        HStack {
+                            Image(systemName: "chevron.left")
+                            Text("Projects")
+                        }
+                    }
+                }
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "waveform.path.ecg")
+                            .foregroundColor(.purple)
+                        Text(store.state.title + " (Visualizer)")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 8) {
+                        if !exportManager.jobs.isEmpty {
+                            Button(action: { ExportManager.shared.launchExporterApp() }) {
+                                HStack {
+                                    if exportManager.jobs.contains(where: { $0.status == .exporting }) {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .tint(.white)
+                                            .frame(width: 12, height: 12)
+                                        Text("Exporting...")
+                                    } else {
+                                        Image(systemName: "film")
+                                        Text("\(exportManager.jobs.count)")
+                                    }
+                                }
+                                .font(.system(size: 13, weight: .semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.purple.opacity(0.8))
+                                .foregroundColor(.white)
+                                .cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        Button(action: { showExportModal = true }) {
+                            HStack {
+                                Image(systemName: "square.and.arrow.up")
+                                Text("Export")
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.green.opacity(0.8))
+                            .foregroundColor(.white)
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button(action: { showYouTubePublish = true }) {
+                            HStack {
+                                Image(systemName: "play.rectangle.fill")
+                                Text("YouTube")
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.8))
+                            .foregroundColor(.white)
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            
+            // Export Modal Overlay
+            if showExportModal {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { showExportModal = false }
+                    .zIndex(100)
+                
+                ExportModalView(isPresented: $showExportModal, onPublishToYouTube: { url, isScheduled in
+                    self.showExportModal = false
+                    self.youtubeVideoURL = url
+                    self.scheduleToYouTube = isScheduled
+                    self.showYouTubePublish = true
+                })
+                    .zIndex(101)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            
+            // Search Modal Overlay
+            if showSearchModal {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { showSearchModal = false }
+                    .zIndex(100)
+                
+                OnlineAudioSearchModal(isPresented: $showSearchModal)
+                    .zIndex(101)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            
+            // Background Modal Overlay
+            if store.isShowingBackgroundFetch {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { store.isShowingBackgroundFetch = false }
+                    .zIndex(100)
+                
+                FetchBackgroundModal(isPresented: $store.isShowingBackgroundFetch)
+                    .zIndex(101)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            
+            // YouTube Publish Modal Overlay
+            if showYouTubePublish {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { showYouTubePublish = false }
+                    .zIndex(100)
+                
+                YouTubePublishView(isPresented: $showYouTubePublish, videoFileURL: youtubeVideoURL, initialSchedule: scheduleToYouTube)
+                    .zIndex(101)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+        }
+        .onDisappear {
+            store.pause()
+        }
+    }
+}
+
+struct VisualizerInspectorSidebar: View {
     @EnvironmentObject var store: ProjectStore
     
     var body: some View {
-        VStack {
-            HStack {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                    Text("Back to Home")
-                        .font(.system(size: 14, weight: .medium))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("VISUALIZER SETTINGS")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.gray)
+                    .tracking(1.5)
+                    .padding(.top, 10)
+                
+                VStack(spacing: 20) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 50))
+                        .foregroundColor(.purple)
+                    
+                    Text("Visualizer Controls")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    
+                    Text("Visualizer-specific settings will appear here in the future.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
                 }
-                .buttonStyle(.plain)
-                .foregroundColor(.white)
                 .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(12)
                 
                 Spacer()
-                
-                Text(store.state.title)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                Text("Visualizer Editor")
-                    .foregroundColor(.gray)
-                    .padding()
             }
-            .background(Color(white: 0.1))
-            
-            Spacer()
-            
-            VStack(spacing: 20) {
-                Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 60))
-                    .foregroundColor(.purple)
-                
-                Text("Audio Visualizer Editor")
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                Text("Coming soon...")
-                    .foregroundColor(.gray)
-            }
-            
-            Spacer()
+            .padding(20)
         }
-        .frame(minWidth: 1000, minHeight: 700)
-        .background(Color.black)
     }
 }
