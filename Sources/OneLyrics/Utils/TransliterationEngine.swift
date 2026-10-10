@@ -3,6 +3,7 @@ import Foundation
 enum DetectedLanguage: String {
     case hindi = "Hindi"
     case kannada = "Kannada"
+    case punjabi = "Punjabi"
     case unknown = "Unknown"
 }
 
@@ -12,10 +13,13 @@ class TransliterationEngine {
     func detectLanguage(text: String) -> DetectedLanguage {
         let hindiRegex = try! NSRegularExpression(pattern: "[\\u0900-\\u097F]")
         let kannadaRegex = try! NSRegularExpression(pattern: "[\\u0C80-\\u0CFF]")
+        let punjabiRegex = try! NSRegularExpression(pattern: "[\\u0A00-\\u0A7F]")
         
         let range = NSRange(location: 0, length: text.utf16.count)
         if hindiRegex.firstMatch(in: text, options: [], range: range) != nil {
             return .hindi
+        } else if punjabiRegex.firstMatch(in: text, options: [], range: range) != nil {
+            return .punjabi
         } else if kannadaRegex.firstMatch(in: text, options: [], range: range) != nil {
             return .kannada
         }
@@ -29,6 +33,8 @@ class TransliterationEngine {
             let lang = detectLanguage(text: word)
             if lang == .hindi {
                 return transliterateHindiWord(word)
+            } else if lang == .punjabi {
+                return transliteratePunjabiWord(word)
             } else if lang == .kannada {
                 return transliterateKannadaWord(word)
             }
@@ -272,6 +278,142 @@ class TransliterationEngine {
         }
         
         // Capitalize first letter
+        if out.count > 0 {
+            out = out.prefix(1).capitalized + out.dropFirst()
+        }
+        
+        return out
+    }
+    
+    // MARK: - Punjabi Transliteration (Advanced)
+    private func transliteratePunjabiWord(_ word: String) -> String {
+        var out = ""
+        let chars = Array(word.unicodeScalars).map { Character($0) }
+        var i = 0
+        
+        let consonants: [Character: String] = [
+            "ਕ": "k", "ਖ": "kh", "ਗ": "g", "ਘ": "gh", "ਙ": "ng",
+            "ਚ": "ch", "ਛ": "chh", "ਜ": "j", "ਝ": "jh", "ਞ": "ny",
+            "ਟ": "t", "ਠ": "th", "ਡ": "d", "ਢ": "dh", "ਣ": "n",
+            "ਤ": "t", "ਥ": "th", "ਦ": "d", "ਧ": "dh", "ਨ": "n",
+            "ਪ": "p", "ਫ": "ph", "ਬ": "b", "ਭ": "bh", "ਮ": "m",
+            "ਯ": "y", "ਰ": "r", "ਲ": "l", "ਵ": "v",
+            "ਸ": "s", "ਹ": "h",
+            
+            "ਸ਼": "sh", "ਖ਼": "kh", "ਗ਼": "g", "ਜ਼": "z", "ੜ": "r", "ਫ਼": "f",
+            "q": "q", "z": "z", "f": "f"
+        ]
+        
+        let nuktaConsonants: [Character: String] = [
+            "ਸ": "sh", "ਖ": "kh", "ਗ": "g", "ਜ": "z", "ਫ": "f", "ਡ": "r"
+        ]
+        
+        let independentVowels: [Character: String] = [
+            "ਅ": "a", "ਆ": "aa", "ਇ": "i", "ਈ": "i", "ਉ": "u", "ਊ": "u",
+            "ਏ": "e", "ਐ": "ae", "ਓ": "o", "ਔ": "au"
+        ]
+        
+        let dependentVowels: [Character: String] = [
+            "ਾ": "aa", "ਿ": "i", "ੀ": "i", "ੁ": "u", "ੂ": "u",
+            "ੇ": "e", "ੈ": "ai", "ो": "o", "ौ": "au" // using hindi ो as placeholder if mixed, but punjabi is ੋ, ੌ
+        ]
+        
+        let punjabiDependentVowels: [Character: String] = [
+            "ਾ": "aa", "ਿ": "i", "ੀ": "i", "ੁ": "u", "ੂ": "u",
+            "ੇ": "e", "ੈ": "ai", "ੋ": "o", "ੌ": "au"
+        ]
+        
+        while i < chars.count {
+            let c = chars[i]
+            
+            var currentConsStr: String? = nil
+            
+            if i + 1 < chars.count && chars[i+1] == "਼" {
+                if let nCons = nuktaConsonants[c] {
+                    currentConsStr = nCons
+                    i += 1
+                }
+            }
+            
+            if currentConsStr == nil {
+                currentConsStr = consonants[c]
+            }
+            
+            if let indV = independentVowels[c] {
+                out += indV
+            } else if let cons = currentConsStr {
+                out += cons
+                
+                let nextC = i + 1 < chars.count ? chars[i+1] : nil
+                let nextNextC = i + 2 < chars.count ? chars[i+2] : nil
+                
+                var hasVowelSign = false
+                var isHalant = false
+                
+                if let next = nextC {
+                    if punjabiDependentVowels[next] != nil || dependentVowels[next] != nil {
+                        hasVowelSign = true
+                    } else if next == "੍" {
+                        isHalant = true
+                    } else if next == "ਂ" || next == "ੰ" || next == "ੱ" {
+                        // Bindi, Tippi, Adhak
+                    }
+                }
+                
+                if !hasVowelSign && !isHalant {
+                    var deleteSchwa = false
+                    if i == chars.count - 1 {
+                        deleteSchwa = true
+                    } else if i > 0 && i < chars.count - 2 {
+                        if let n1 = nextC, (consonants[n1] != nil || n1 == "਼" || n1 == "ੱ") {
+                            if let n2 = nextNextC, (punjabiDependentVowels[n2] != nil || dependentVowels[n2] != nil || n2 == "ਾ") {
+                                deleteSchwa = true
+                            }
+                        }
+                    }
+                    
+                    if !deleteSchwa {
+                        out += "a"
+                    }
+                }
+            } else if let depV = punjabiDependentVowels[c] ?? dependentVowels[c] {
+                out += depV
+            } else if c == "ਂ" || c == "ੰ" { // Bindi or Tippi
+                if i + 1 < chars.count {
+                    let nextC = chars[i+1]
+                    if ["ਪ", "ਫ", "ਬ", "ਭ", "ਮ"].contains(nextC) {
+                        out += "m"
+                    } else {
+                        out += "n"
+                    }
+                } else {
+                    out += "n"
+                }
+            } else if c == "ੱ" { // Adhak
+                if i + 1 < chars.count {
+                    let nextC = chars[i+1]
+                    if let nextCons = consonants[nextC] {
+                        if let firstChar = nextCons.first {
+                            out += String(firstChar)
+                        }
+                    }
+                }
+            } else if c == "੍" {
+                // Halant
+            } else if c != "਼" {
+                out += String(c)
+            }
+            i += 1
+        }
+        
+        // Post-processing
+        out = out.replacingOccurrences(of: "iaa", with: "iya")
+        out = out.replacingOccurrences(of: "uaa", with: "uwa")
+        
+        if out.hasSuffix("un") {
+            out = String(out.dropLast())
+        }
+        
         if out.count > 0 {
             out = out.prefix(1).capitalized + out.dropFirst()
         }

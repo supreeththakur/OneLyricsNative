@@ -176,7 +176,7 @@ struct AssetSidebar: View {
                         get: { store.state.enableAutoTransliteration },
                         set: { store.toggleAutoTransliteration(enable: $0) }
                     )) {
-                        Text("Detect Hindi & Kannada")
+                        Text("Detect Hindi, Punjabi & Kannada")
                             .font(.system(size: 11))
                             .foregroundColor(.white)
                     }

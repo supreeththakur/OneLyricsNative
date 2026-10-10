@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-VERSION="2.0.3"
-EXPORTER_VERSION="1.0.3"
-BUILD="18"
+VERSION="2.0.4"
+EXPORTER_VERSION="1.0.4"
+BUILD="19"
 
 function generate_appicon() {
     LOGO_PATH="/Users/itech/Downloads/onelyricslogo.png"
