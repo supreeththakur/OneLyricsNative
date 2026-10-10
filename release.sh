@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-VERSION="2.0.1"
-EXPORTER_VERSION="1.0.1"
-BUILD="16"
+VERSION="2.0.2"
+EXPORTER_VERSION="1.0.2"
+BUILD="17"
 
 function generate_appicon() {
     LOGO_PATH="/Users/itech/Downloads/onelyricslogo.png"
@@ -72,7 +72,7 @@ EOF
     fi
 
     echo "Signing the App Bundle..."
-    codesign --force --deep -s - "$APP_DIR"
+    codesign --force --deep -s "37C9QL8C8C" "$APP_DIR"
 
     echo "Creating DMG..."
     DMG_ROOT="DMG_Root_Main_${ARCH}"
@@ -129,7 +129,7 @@ EOF
     fi
 
     echo "Signing the App Bundle..."
-    codesign --force --deep -s - "$EXP_APP_DIR"
+    codesign --force --deep -s "37C9QL8C8C" "$EXP_APP_DIR"
 
     echo "Creating DMG..."
     DMG_ROOT="DMG_Root_Exp_${ARCH}"
