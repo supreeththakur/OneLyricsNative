@@ -34,7 +34,15 @@ We provide separate standalone binaries for both Apple Silicon and Intel Macs.
    - `OneLyrics-[Arch].dmg` for the main editing app.
    - `OneLyricsExporter-[Arch].dmg` for the standalone render engine.
 3. Open the DMG and drag the app into your `Applications` folder.
-4. Launch the app and start creating!
+
+> [!WARNING]
+> **macOS Gatekeeper Note:** Because this app is open-source and not signed with a paid Apple Developer certificate, macOS will show an "unidentified developer" warning when you try to open it for the first time.
+> 
+> **To easily bypass this:**
+> 1. Instead of double-clicking the app, **Right-Click** (or Control-Click) the app in your Applications folder and select **Open**.
+> 2. You will now see an "Open" button in the warning dialog. Click it and the app will launch normally! 
+> 
+> *(Alternatively, you can run `xattr -cr /Applications/OneLyrics.app` in your terminal to remove the quarantine flag).*
 
 ## 🛠️ Development
 
