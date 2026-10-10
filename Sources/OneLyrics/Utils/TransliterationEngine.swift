@@ -62,10 +62,9 @@ class TransliterationEngine {
     // MARK: - Hindi Transliteration (Advanced)
     private func transliterateHindiWord(_ word: String) -> String {
         var w = word
-        // Pre-replacements for multi-character conjuncts and nuktas
+        // Pre-replacements for multi-character conjuncts
         let preReplacements: [(String, String)] = [
-            ("ज्ञ", "gy"), ("क्ष", "ksh"), ("त्र", "tr"),
-            ("क़", "q"), ("ख़", "kh"), ("ग़", "g"), ("ज़", "z"), ("फ़", "f"), ("ड़", "d"), ("ढ़", "dh")
+            ("ज्ञ", "gy"), ("क्ष", "ksh"), ("त्र", "tr")
         ]
         for (k, v) in preReplacements {
             w = w.replacingOccurrences(of: k, with: v)
@@ -83,7 +82,16 @@ class TransliterationEngine {
             "त": "t", "थ": "th", "द": "d", "ध": "dh", "न": "n",
             "प": "p", "फ": "f", "ब": "b", "भ": "bh", "म": "m",
             "य": "y", "र": "r", "ल": "l", "व": "v", "श": "sh",
-            "ष": "sh", "स": "s", "ह": "h"
+            "ष": "sh", "स": "s", "ह": "h",
+            
+            "क़": "q", "ख़": "kh", "ग़": "g", "ज़": "z",
+            "ड़": "d", "ढ़": "dh", "फ़": "f", "य़": "y",
+            
+            "q": "q", "z": "z", "f": "f"
+        ]
+        
+        let nuktaConsonants: [Character: String] = [
+            "क": "q", "ख": "kh", "ग": "g", "ज": "z", "फ": "f", "ड": "d", "ढ": "dh"
         ]
         
         let independentVowels: [Character: String] = [
@@ -99,9 +107,22 @@ class TransliterationEngine {
         while i < chars.count {
             let c = chars[i]
             
+            var currentConsStr: String? = nil
+            
+            if i + 1 < chars.count && chars[i+1] == "़" { // Nukta check
+                if let nCons = nuktaConsonants[c] {
+                    currentConsStr = nCons
+                    i += 1 // Advance past the nukta
+                }
+            }
+            
+            if currentConsStr == nil {
+                currentConsStr = consonants[c]
+            }
+            
             if let indV = independentVowels[c] {
                 out += indV
-            } else if let cons = consonants[c] {
+            } else if let cons = currentConsStr {
                 out += cons
                 // Check if schwa is needed
                 let nextC = i + 1 < chars.count ? chars[i+1] : nil
@@ -127,7 +148,7 @@ class TransliterationEngine {
                         deleteSchwa = true
                     } else if i > 0 && i < chars.count - 2 {
                         // Schwa deletion in the middle of a word (e.g. Karta -> Kar-ta instead of Karata)
-                        if let n1 = nextC, consonants[n1] != nil {
+                        if let n1 = nextC, consonants[n1] != nil || n1 == "़" { 
                             if let n2 = nextNextC, dependentVowels[n2] != nil || n2 == "ा" {
                                 deleteSchwa = true
                             }
@@ -141,7 +162,6 @@ class TransliterationEngine {
             } else if let depV = dependentVowels[c] {
                 out += depV
             } else if c == "ं" || c == "ँ" {
-                // Determine if 'n' or 'm' based on next consonant
                 if i + 1 < chars.count {
                     let nextC = chars[i+1]
                     if ["प", "फ", "ब", "भ", "म"].contains(nextC) {
@@ -157,7 +177,8 @@ class TransliterationEngine {
             } else if c == "ऽ" {
                 // Avagraha
                 out += "a"
-            } else {
+            } else if c != "़" { 
+                // Orphaned nukta that didn't match a consonant above
                 out += String(c)
             }
             i += 1
