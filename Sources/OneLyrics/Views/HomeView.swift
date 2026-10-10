@@ -9,6 +9,7 @@ struct HomeView: View {
     @State private var newProjectTitle = ""
     @State private var renamingProjectId: UUID? = nil
     @State private var renamingProjectTitle = ""
+    @State private var selectedTab: ProjectType = .lyrics
     
     let columns = [
         GridItem(.adaptive(minimum: 200, maximum: 250), spacing: 20)
@@ -20,7 +21,8 @@ struct HomeView: View {
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .none
         
-        let groups = Dictionary(grouping: projectManager.projects) { project -> String in
+        let filteredProjects = projectManager.projects.filter { $0.type == selectedTab }
+        let groups = Dictionary(grouping: filteredProjects) { project -> String in
             let date = project.createdAt
             if calendar.isDateInToday(date) {
                 return "Today"
@@ -50,6 +52,36 @@ struct HomeView: View {
                         .font(.system(size: 14))
                         .foregroundColor(.gray)
                 }
+                
+                Spacer()
+                
+                // Tab Selection
+                HStack(spacing: 0) {
+                    Button(action: { selectedTab = .lyrics }) {
+                        Text("Lyrics Project")
+                            .font(.system(size: 14, weight: selectedTab == .lyrics ? .bold : .medium))
+                            .foregroundColor(selectedTab == .lyrics ? .white : .gray)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(selectedTab == .lyrics ? Color.blue.opacity(0.8) : Color.clear)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button(action: { selectedTab = .visualizer }) {
+                        Text("Visualizer Project")
+                            .font(.system(size: 14, weight: selectedTab == .visualizer ? .bold : .medium))
+                            .foregroundColor(selectedTab == .visualizer ? .white : .gray)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(selectedTab == .visualizer ? Color.purple.opacity(0.8) : Color.clear)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(4)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(10)
                 
                 Spacer()
                 
@@ -113,7 +145,7 @@ struct HomeView: View {
             Button("Create") {
                 let input = newProjectTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 let title = input.isEmpty ? "New Project" : input
-                let project = projectManager.createProject(title: title)
+                let project = projectManager.createProject(title: title, type: selectedTab)
                 onSelect(project)
             }
         }

@@ -51,8 +51,9 @@ class ProjectManager: ObservableObject {
         return newTitle
     }
     
-    func createProject(title: String) -> ProjectState {
+    func createProject(title: String, type: ProjectType = .lyrics) -> ProjectState {
         var newProject = ProjectState()
+        newProject.type = type
         newProject.title = uniqueTitle(for: title)
         saveProject(newProject)
         loadProjects()

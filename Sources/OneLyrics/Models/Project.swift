@@ -1,5 +1,10 @@
 import Foundation
 
+enum ProjectType: String, Codable, CaseIterable {
+    case lyrics = "Lyrics"
+    case visualizer = "Visualizer"
+}
+
 struct LyricBlock: Identifiable, Codable {
     var id: UUID = UUID()
     var text: String
@@ -111,6 +116,7 @@ struct MediaConfig: Codable {
 
 struct ProjectState: Codable, Identifiable {
     var id: UUID = UUID()
+    var type: ProjectType = .lyrics
     var title: String = "Untitled Project"
     var createdAt: Date = Date()
     var lastModified: Date = Date()
@@ -140,6 +146,7 @@ struct ProjectState: Codable, Identifiable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        type = try container.decodeIfPresent(ProjectType.self, forKey: .type) ?? .lyrics
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Untitled Project"
         lastModified = try container.decodeIfPresent(Date.self, forKey: .lastModified) ?? Date()
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? lastModified
