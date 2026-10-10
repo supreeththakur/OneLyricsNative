@@ -170,4 +170,11 @@ gh release upload v${VERSION} OneLyricsExporter-Intel.dmg --clobber
 
 echo "Cleaning up..."
 rm -f AppIcon.icns
+
+echo "Installing locally in /Applications..."
+rm -rf /Applications/OneLyrics.app
+rm -rf /Applications/OneLyricsExporter.app
+cp -R OneLyrics.app /Applications/
+cp -R OneLyricsExporter.app /Applications/
+
 echo "Done!"
