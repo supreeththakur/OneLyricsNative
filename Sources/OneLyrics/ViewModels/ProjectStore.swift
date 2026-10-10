@@ -178,7 +178,7 @@ class ProjectStore: ObservableObject {
         if state.enableAutoTransliteration {
             for i in 0..<newBlocks.count {
                 let lang = TransliterationEngine.shared.detectLanguage(text: newBlocks[i].text)
-                if lang == .hindi || lang == .kannada {
+                if lang == .hindi || lang == .kannada || lang == .punjabi {
                     newBlocks[i].transliteratedText = TransliterationEngine.shared.transliterate(text: newBlocks[i].text)
                     newBlocks[i].isTransliteratedActive = state.showTransliteratedLyrics
                 }
@@ -194,7 +194,7 @@ class ProjectStore: ObservableObject {
         
         if state.enableAutoTransliteration {
             let lang = TransliterationEngine.shared.detectLanguage(text: newLyric.text)
-            if lang == .hindi || lang == .kannada {
+            if lang == .hindi || lang == .kannada || lang == .punjabi {
                 newLyric.transliteratedText = TransliterationEngine.shared.transliterate(text: newLyric.text)
                 newLyric.isTransliteratedActive = state.showTransliteratedLyrics
             }
@@ -223,7 +223,7 @@ class ProjectStore: ObservableObject {
                 
                 if state.enableAutoTransliteration {
                     let lang = TransliterationEngine.shared.detectLanguage(text: newText)
-                    if lang == .hindi || lang == .kannada {
+                    if lang == .hindi || lang == .kannada || lang == .punjabi {
                         state.lyrics[index].transliteratedText = TransliterationEngine.shared.transliterate(text: newText)
                         state.lyrics[index].isTransliteratedActive = state.showTransliteratedLyrics
                     } else {
@@ -264,7 +264,7 @@ class ProjectStore: ObservableObject {
             for i in 0..<state.lyrics.count {
                 if state.lyrics[i].transliteratedText == nil {
                     let lang = TransliterationEngine.shared.detectLanguage(text: state.lyrics[i].text)
-                    if lang == .hindi || lang == .kannada {
+                    if lang == .hindi || lang == .kannada || lang == .punjabi {
                         state.lyrics[i].transliteratedText = TransliterationEngine.shared.transliterate(text: state.lyrics[i].text)
                         state.lyrics[i].isTransliteratedActive = state.showTransliteratedLyrics
                     }

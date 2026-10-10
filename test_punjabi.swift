@@ -136,7 +136,15 @@ func transliteratePunjabiWord(_ word: String) -> String {
     return out
 }
 
-print("Result:", transliteratePunjabiWord("ਤੇਰੀ")) // Teri
+let text = "ਮੇਰਾ ਆਪਣਾ ਨਾ ਮੇਰਾ ਕਦੇ ਹੋਇਆ"
+let punjabiRegex = try! NSRegularExpression(pattern: "[\\u0A00-\\u0A7F]")
+let range = NSRange(location: 0, length: text.utf16.count)
+if punjabiRegex.firstMatch(in: text, options: [], range: range) != nil {
+    print("Detected: Punjabi")
+} else {
+    print("Detected: Unknown")
+}
+print("Result:", transliteratePunjabiWord(text))
 print("Result:", transliteratePunjabiWord("ਕਰਦੀ")) // Kardi
 print("Result:", transliteratePunjabiWord("ਐ")) // Ae
 print("Result:", transliteratePunjabiWord("ਮੈਨੂੰ")) // Mainu
