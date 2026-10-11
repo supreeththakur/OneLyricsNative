@@ -32,6 +32,37 @@ class ProjectStore: ObservableObject {
     @Published var extractedColor2: String = "#0D0D14"
     @Published var defaultArtwork: NSImage? = nil
     
+    // In-memory image caches for butter-smooth 60 FPS preview (zero disk I/O per frame)
+    @Published var cachedCoverImage: NSImage? = nil
+    @Published var cachedBackgroundImage: NSImage? = nil
+    
+    var currentCoverImage: NSImage? {
+        if let coverUrl = state.coverImageURL {
+            if let cached = cachedCoverImage { return cached }
+            if let img = NSImage(contentsOf: coverUrl) {
+                DispatchQueue.main.async { self.cachedCoverImage = img }
+                return img
+            }
+        }
+        return defaultArtwork ?? thumbnails.first?.image
+    }
+    
+    var currentVisualizerBackgroundImage: NSImage? {
+        if let bgUrl = state.backgroundURL, bgUrl.pathExtension.lowercased() != "mp4", bgUrl.pathExtension.lowercased() != "mov" {
+            if let cached = cachedBackgroundImage { return cached }
+            if let img = NSImage(contentsOf: bgUrl) {
+                DispatchQueue.main.async { self.cachedBackgroundImage = img }
+                return img
+            }
+        }
+        return thumbnails.first?.image ?? currentCoverImage
+    }
+    
+    func clearCoverImage() {
+        state.coverImageURL = nil
+        cachedCoverImage = nil
+        objectWillChange.send()
+    }
     
     var undoManager: UndoManager?
     
@@ -123,12 +154,15 @@ class ProjectStore: ObservableObject {
     func setCoverImage(url: URL) {
         state.coverImageURL = url
         if let img = NSImage(contentsOf: url) {
+            cachedCoverImage = img
             if let palette = ImageColorExtractor.extractProminentColors(from: img) {
                 extractedColor1 = palette.bg1
                 extractedColor2 = palette.bg2
                 state.visualizerConfig.color1 = palette.fg1
                 state.visualizerConfig.color2 = palette.fg2
             }
+        } else {
+            cachedCoverImage = nil
         }
         objectWillChange.send()
     }
@@ -208,13 +242,16 @@ class ProjectStore: ObservableObject {
                 bgEndObserver = nil
             }
             if let img = NSImage(contentsOf: url) {
+                self.cachedBackgroundImage = img
                 self.thumbnails = [(time: 0, image: img)]
                 self.extractColorsIfNeeded()
             } else {
+                self.cachedBackgroundImage = nil
                 self.thumbnails = []
             }
         } else {
             bgPlayer = nil
+            cachedBackgroundImage = nil
             thumbnails = [] // Clear thumbnails if not video or image
             if let obs = bgEndObserver {
                 NotificationCenter.default.removeObserver(obs)

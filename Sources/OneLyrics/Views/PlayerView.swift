@@ -27,7 +27,7 @@ struct PlayerView: View {
                                             .disabled(true)
                                         )
                                 }
-                            } else if let nsImage = NSImage(contentsOf: bg) {
+                            } else if let nsImage = store.currentVisualizerBackgroundImage {
                                 Color.clear
                                     .overlay(
                                         Image(nsImage: nsImage)
@@ -388,11 +388,376 @@ struct AVPlayerViewRepresentable: NSViewRepresentable {
     }
 }
 
+struct StaticVisualizerBackground: View, Equatable {
+    let image: NSImage?
+    let width: CGFloat
+    let height: CGFloat
+    
+    static func == (lhs: StaticVisualizerBackground, rhs: StaticVisualizerBackground) -> Bool {
+        return lhs.image === rhs.image && lhs.width == rhs.width && lhs.height == rhs.height
+    }
+    
+    var body: some View {
+        ZStack {
+            Color.black
+            if let img = image {
+                Image(nsImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .blur(radius: width * 0.08, opaque: true)
+                    .opacity(0.4)
+            }
+        }
+        .frame(width: width, height: height)
+        .clipped()
+    }
+}
+
+struct SpectrumBarsCanvas: View {
+    let amplitudes: [CGFloat]
+    let color1: Color
+    let color2: Color
+    let glow: Double
+    let width: CGFloat
+    let height: CGFloat
+    
+    var body: some View {
+        Canvas { context, size in
+            let w = size.width
+            let h = size.height
+            let count = 40
+            let barW = max(3.0, w * 0.015)
+            let totalBarW = barW * CGFloat(count)
+            let spacing = (w - totalBarW) / CGFloat(count - 1)
+            let glowFactor = CGFloat(glow)
+            
+            for i in 0..<count {
+                let amp = i < amplitudes.count ? max(0.02, amplitudes[i]) : 0.02
+                let barHeight = min(h, max(barW, amp * h * 0.85))
+                let x = CGFloat(i) * (barW + spacing)
+                let y = (h - barHeight) / 2.0
+                
+                let barRect = CGRect(x: x, y: y, width: barW, height: barHeight)
+                let cornerRadius = barW * 0.35
+                let barPath = Path(roundedRect: barRect, cornerRadius: cornerRadius)
+                
+                // Outer soft luminous halo
+                if glowFactor > 0.05 {
+                    let haloExpand = barW * (0.8 * glowFactor)
+                    let haloRect = CGRect(x: x - haloExpand / 2, y: y - haloExpand / 2, width: barW + haloExpand, height: barHeight + haloExpand)
+                    var glowCtx = context
+                    glowCtx.opacity = Double(0.28 * glowFactor)
+                    glowCtx.fill(Path(roundedRect: haloRect, cornerRadius: cornerRadius * 1.5), with: .color(color1))
+                }
+                
+                // Crisp gradient fill
+                context.fill(
+                    barPath,
+                    with: .linearGradient(
+                        Gradient(colors: [color1, color2]),
+                        startPoint: CGPoint(x: x, y: y + barHeight),
+                        endPoint: CGPoint(x: x, y: y)
+                    )
+                )
+                
+                // Glass stroke
+                context.stroke(barPath, with: .color(Color.white.opacity(0.35)), lineWidth: 0.8)
+            }
+        }
+    }
+}
+
+struct WaveformCanvas: View {
+    let amplitudes: [CGFloat]
+    let color1: Color
+    let color2: Color
+    let glow: Double
+    let width: CGFloat
+    let height: CGFloat
+    
+    var body: some View {
+        Canvas { context, size in
+            let w = size.width
+            let h = size.height
+            let midY = h * 0.5
+            let count = 40
+            let step = w / CGFloat(count - 1)
+            let glowFactor = CGFloat(glow)
+            
+            var fillPath = Path()
+            fillPath.move(to: CGPoint(x: 0, y: midY))
+            for i in 1..<count {
+                let prevX = CGFloat(i - 1) * step
+                let currX = CGFloat(i) * step
+                let ampPrev = i - 1 < amplitudes.count ? max(0.01, amplitudes[i - 1]) : 0.01
+                let ampCurr = i < amplitudes.count ? max(0.01, amplitudes[i]) : 0.01
+                let prevY = midY - (ampPrev * h * 0.42)
+                let currY = midY - (ampCurr * h * 0.42)
+                let midPoint = CGPoint(x: (prevX + currX) / 2.0, y: (prevY + currY) / 2.0)
+                if i == 1 {
+                    fillPath.addLine(to: midPoint)
+                } else {
+                    fillPath.addQuadCurve(to: midPoint, control: CGPoint(x: prevX, y: prevY))
+                }
+            }
+            let lastAmp = count - 1 < amplitudes.count ? max(0.01, amplitudes[count - 1]) : 0.01
+            fillPath.addLine(to: CGPoint(x: w, y: midY - (lastAmp * h * 0.42)))
+            
+            // Mirror bottom half
+            for i in (1..<count).reversed() {
+                let prevX = CGFloat(i) * step
+                let currX = CGFloat(i - 1) * step
+                let ampPrev = i < amplitudes.count ? max(0.01, amplitudes[i]) : 0.01
+                let ampCurr = i - 1 < amplitudes.count ? max(0.01, amplitudes[i - 1]) : 0.01
+                let prevY = midY + (ampPrev * h * 0.42)
+                let currY = midY + (ampCurr * h * 0.42)
+                let midPoint = CGPoint(x: (prevX + currX) / 2.0, y: (prevY + currY) / 2.0)
+                if i == count - 1 {
+                    fillPath.addLine(to: midPoint)
+                } else {
+                    fillPath.addQuadCurve(to: midPoint, control: CGPoint(x: prevX, y: prevY))
+                }
+            }
+            let firstAmp = !amplitudes.isEmpty ? max(0.01, amplitudes[0]) : 0.01
+            fillPath.addLine(to: CGPoint(x: 0, y: midY + (firstAmp * h * 0.42)))
+            fillPath.closeSubpath()
+            
+            // Soft glowing ambient body fill
+            if glowFactor > 0.05 {
+                var gCtx = context
+                gCtx.opacity = Double(0.3 * glowFactor)
+                gCtx.fill(fillPath, with: .color(color1))
+            }
+            
+            context.fill(
+                fillPath,
+                with: .linearGradient(
+                    Gradient(colors: [color1.opacity(0.85), color2.opacity(0.85)]),
+                    startPoint: CGPoint(x: 0, y: midY),
+                    endPoint: CGPoint(x: w, y: midY)
+                )
+            )
+            
+            // Center bright waveform stroke
+            var linePath = Path()
+            linePath.move(to: CGPoint(x: 0, y: midY - (firstAmp * h * 0.42)))
+            for i in 1..<count {
+                let prevX = CGFloat(i - 1) * step
+                let currX = CGFloat(i) * step
+                let ampPrev = i - 1 < amplitudes.count ? max(0.01, amplitudes[i - 1]) : 0.01
+                let ampCurr = i < amplitudes.count ? max(0.01, amplitudes[i]) : 0.01
+                let prevY = midY - (ampPrev * h * 0.42)
+                let currY = midY - (ampCurr * h * 0.42)
+                let midPoint = CGPoint(x: (prevX + currX) / 2.0, y: (prevY + currY) / 2.0)
+                if i == 1 {
+                    linePath.addLine(to: midPoint)
+                } else {
+                    linePath.addQuadCurve(to: midPoint, control: CGPoint(x: prevX, y: prevY))
+                }
+            }
+            linePath.addLine(to: CGPoint(x: w, y: midY - (lastAmp * h * 0.42)))
+            
+            if glowFactor > 0.05 {
+                var strokeGlowCtx = context
+                strokeGlowCtx.opacity = Double(0.45 * glowFactor)
+                strokeGlowCtx.stroke(linePath, with: .color(color1), style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+            }
+            
+            context.stroke(
+                linePath,
+                with: .color(Color.white),
+                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+            )
+        }
+    }
+}
+
+struct CircularVisualizerCanvas: View {
+    let amplitudes: [CGFloat]
+    let color1: Color
+    let color2: Color
+    let glow: Double
+    let phase: Double
+    let artworkImage: NSImage?
+    let width: CGFloat
+    let height: CGFloat
+    
+    var body: some View {
+        let bassAmp = amplitudes.count >= 4 ? amplitudes[0...3].reduce(0, +) / 4.0 : 0.0
+        let centerScale = 1.0 + (bassAmp * 0.15)
+        let artSize = min(width, height) * 0.36
+        
+        ZStack {
+            Canvas { context, size in
+                let w = size.width
+                let h = size.height
+                let center = CGPoint(x: w / 2.0, y: h / 2.0)
+                let baseRadius = (artSize / 2.0) + (w * 0.015)
+                let innerRadius = baseRadius * centerScale
+                let numBars = 90
+                let glowFactor = CGFloat(glow)
+                
+                for i in 0..<numBars {
+                    let isRightHalf = i >= (numBars / 2)
+                    let indexInHalf = isRightHalf ? (numBars - 1 - i) : i
+                    let mappedIdx = min(39, Int((Double(indexInHalf) / Double(numBars / 2)) * 39.0))
+                    
+                    let amp = mappedIdx < amplitudes.count ? max(0.015, amplitudes[mappedIdx]) : 0.015
+                    let barLength = amp * (min(w, h) * 0.28)
+                    let angleDeg = Double(i) / Double(numBars) * 360.0 + 90.0
+                    let angleRad = angleDeg * .pi / 180.0
+                    
+                    let cosA = cos(angleRad)
+                    let sinA = sin(angleRad)
+                    
+                    let startPoint = CGPoint(x: center.x + innerRadius * cosA, y: center.y + innerRadius * sinA)
+                    let endPoint = CGPoint(x: center.x + (innerRadius + barLength) * cosA, y: center.y + (innerRadius + barLength) * sinA)
+                    
+                    var barPath = Path()
+                    barPath.move(to: startPoint)
+                    barPath.addLine(to: endPoint)
+                    
+                    // Glow halo pass
+                    if glowFactor > 0.05 {
+                        var gCtx = context
+                        gCtx.opacity = Double(0.25 * glowFactor)
+                        gCtx.stroke(barPath, with: .color(color1), style: StrokeStyle(lineWidth: max(2.5, w * 0.012), lineCap: .round))
+                    }
+                    
+                    // Main crisp gradient bar
+                    context.stroke(
+                        barPath,
+                        with: .linearGradient(
+                            Gradient(colors: [color1, color2.opacity(0.6)]),
+                            startPoint: startPoint,
+                            endPoint: endPoint
+                        ),
+                        style: StrokeStyle(lineWidth: max(1.5, w * 0.005), lineCap: .round)
+                    )
+                    
+                    // Tip accent dot for high energy
+                    if amp > 0.05 {
+                        let dotRadius = max(1.5, w * 0.0035)
+                        let dotCenter = CGPoint(x: center.x + (innerRadius + barLength + dotRadius * 2.2) * cosA,
+                                                y: center.y + (innerRadius + barLength + dotRadius * 2.2) * sinA)
+                        let dotPath = Path(ellipseIn: CGRect(x: dotCenter.x - dotRadius, y: dotCenter.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2))
+                        
+                        if glowFactor > 0.05 {
+                            var gCtx = context
+                            gCtx.opacity = Double(0.4 * glowFactor)
+                            gCtx.fill(Path(ellipseIn: CGRect(x: dotCenter.x - dotRadius * 2, y: dotCenter.y - dotRadius * 2, width: dotRadius * 4, height: dotRadius * 4)), with: .color(color2))
+                        }
+                        context.fill(dotPath, with: .color(Color.white))
+                    }
+                }
+            }
+            
+            // Center Rotating Artwork Circle
+            ZStack {
+                Group {
+                    if let img = artworkImage {
+                        Image(nsImage: img)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Color.gray.opacity(0.3)
+                    }
+                }
+                .frame(width: artSize, height: artSize)
+                .clipShape(Circle())
+                .rotationEffect(Angle(degrees: phase * 15))
+                .scaleEffect(centerScale)
+                .overlay(
+                    Circle()
+                        .stroke(
+                            LinearGradient(colors: [color1, color2], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 3.5
+                        )
+                        .scaleEffect(centerScale)
+                )
+                .shadow(color: color1.opacity(glow * 0.5), radius: 15)
+            }
+        }
+    }
+}
+
+struct FrequencyReactiveCanvas: View {
+    let amplitudes: [CGFloat]
+    let color1: Color
+    let color2: Color
+    let glow: Double
+    let phase: Double
+    let width: CGFloat
+    let height: CGFloat
+    
+    var body: some View {
+        Canvas { context, size in
+            let w = size.width
+            let h = size.height
+            let center = CGPoint(x: w / 2.0, y: h / 2.0)
+            let bass = amplitudes.count >= 4 ? amplitudes[0...3].reduce(0, +) / 4.0 : 0.0
+            let mid = amplitudes.count >= 16 ? amplitudes[10...15].reduce(0, +) / 6.0 : 0.0
+            let treble = amplitudes.count >= 36 ? amplitudes[30...35].reduce(0, +) / 6.0 : 0.0
+            let glowFactor = CGFloat(glow)
+            
+            // Bass solid center ring
+            let bassRadius = (w * 0.08) + (bass * w * 0.22)
+            let bassRect = CGRect(x: center.x - bassRadius, y: center.y - bassRadius, width: bassRadius * 2, height: bassRadius * 2)
+            
+            if glowFactor > 0.05 {
+                var gCtx = context
+                gCtx.opacity = Double(0.35 * glowFactor)
+                let glowRadius = bassRadius * 1.35
+                gCtx.fill(Path(ellipseIn: CGRect(x: center.x - glowRadius, y: center.y - glowRadius, width: glowRadius * 2, height: glowRadius * 2)), with: .color(color1))
+            }
+            context.fill(Path(ellipseIn: bassRect), with: .color(color1.opacity(0.8)))
+            
+            // Mid ring (dashed)
+            let midRadius = (w * 0.12) + (mid * w * 0.28)
+            let midRect = CGRect(x: center.x - midRadius, y: center.y - midRadius, width: midRadius * 2, height: midRadius * 2)
+            let midLineWidth = max(1.5, w * 0.005 + (mid * w * 0.015))
+            
+            var midCtx = context
+            midCtx.translateBy(x: center.x, y: center.y)
+            midCtx.rotate(by: Angle(degrees: phase * 100))
+            midCtx.translateBy(x: -center.x, y: -center.y)
+            
+            if glowFactor > 0.05 {
+                var midGlow = midCtx
+                midGlow.opacity = Double(0.35 * glowFactor)
+                midGlow.stroke(Path(ellipseIn: midRect), with: .color(color2), style: StrokeStyle(lineWidth: midLineWidth * 2.5, dash: [10, 15]))
+            }
+            midCtx.stroke(Path(ellipseIn: midRect), with: .color(color2), style: StrokeStyle(lineWidth: midLineWidth, dash: [10, 15]))
+            
+            // Treble points
+            let trebleOrbit = (w * 0.16) + (treble * w * 0.2)
+            let trebleDotSize = max(2.5, w * 0.01 + (treble * w * 0.02))
+            
+            for i in 0..<8 {
+                let angleDeg = (Double(i) / 8.0 * 360.0) + (phase * -50.0)
+                let angleRad = angleDeg * .pi / 180.0
+                let px = center.x + trebleOrbit * cos(angleRad)
+                let py = center.y + trebleOrbit * sin(angleRad)
+                let pRect = CGRect(x: px - trebleDotSize / 2.0, y: py - trebleDotSize / 2.0, width: trebleDotSize, height: trebleDotSize)
+                
+                if glowFactor > 0.05 {
+                    var gCtx = context
+                    gCtx.opacity = Double(0.45 * glowFactor)
+                    gCtx.fill(Path(ellipseIn: CGRect(x: px - trebleDotSize, y: py - trebleDotSize, width: trebleDotSize * 2, height: trebleDotSize * 2)), with: .color(Color.white))
+                }
+                context.fill(Path(ellipseIn: pRect), with: .color(Color.white))
+            }
+        }
+    }
+}
+
 struct VisualizerOverlay: View {
     @EnvironmentObject var store: ProjectStore
     let geo: GeometryProxy
     
-    // Timer for syncing with playback
+    // 60 FPS playback sync timer
     let timer = Timer.publish(every: 1.0/60.0, on: .main, in: .common).autoconnect()
     @State private var currentAmplitudes: [CGFloat] = Array(repeating: 0.02, count: 64)
     @State private var phase: Double = 0.0
@@ -415,24 +780,13 @@ struct VisualizerOverlay: View {
         ZStack {
             // Liquid Moving Background (uses Extracted Colors & Blurred Image)
             ZStack {
-                Color.black
-                
-                // The actual background image heavily blurred
-                Group {
-                    if let firstThumb = store.thumbnails.first?.image {
-                        Image(nsImage: firstThumb)
-                            .resizable()
-                            .scaledToFill()
-                    } else if let bgUrl = store.state.backgroundURL, let nsImage = NSImage(contentsOf: bgUrl), bgUrl.pathExtension.lowercased() != "mp4" {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .scaledToFill()
-                    }
-                }
-                .frame(width: w, height: h)
-                .clipped()
-                .blur(radius: w * 0.08, opaque: true)
-                .opacity(0.4)
+                // Equatable cached background: zero re-blurring overhead during playback
+                StaticVisualizerBackground(
+                    image: store.currentVisualizerBackgroundImage,
+                    width: w,
+                    height: h
+                )
+                .equatable()
                 
                 // Ambient Reactive Particles
                 AmbientParticles(
@@ -443,44 +797,61 @@ struct VisualizerOverlay: View {
                 )
                 .frame(width: w, height: h)
                 
+                // Hardware-accelerated soft radiant liquid orbs (0 GPU blur passes)
                 Circle()
-                    .fill(bgC1.opacity(0.6))
-                    .frame(width: w * 0.8)
+                    .fill(
+                        RadialGradient(
+                            colors: [bgC1.opacity(0.45), bgC1.opacity(0.15), Color.clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: w * 0.4
+                        )
+                    )
+                    .frame(width: w * 0.8, height: w * 0.8)
                     .offset(x: cos(phase * 0.2) * w * 0.3, y: sin(phase * 0.15) * h * 0.3)
-                    .blur(radius: w * 0.15)
                 
                 Circle()
-                    .fill(bgC2.opacity(0.5))
-                    .frame(width: w * 0.9)
+                    .fill(
+                        RadialGradient(
+                            colors: [bgC2.opacity(0.4), bgC2.opacity(0.1), Color.clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: w * 0.45
+                        )
+                    )
+                    .frame(width: w * 0.9, height: w * 0.9)
                     .offset(x: -cos(phase * 0.18) * w * 0.2, y: -sin(phase * 0.22) * h * 0.3)
-                    .blur(radius: w * 0.15)
                     
                 Circle()
-                    .fill(bgC1.opacity(0.3))
-                    .frame(width: w * 0.6)
+                    .fill(
+                        RadialGradient(
+                            colors: [bgC1.opacity(0.25), Color.clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: w * 0.3
+                        )
+                    )
+                    .frame(width: w * 0.6, height: w * 0.6)
                     .offset(x: sin(phase * 0.25) * w * 0.4, y: cos(phase * 0.2) * h * 0.4)
-                    .blur(radius: w * 0.1)
                 
-                // Beat-reactive radiant spotlight illuminating the background behind the cover image
+                // Beat-reactive radiant spotlight illuminating background behind cover art
                 Circle()
                     .fill(
                         RadialGradient(
                             colors: [
-                                c1.opacity(Double(0.25 + coverBass * 0.55 * glowFactor)),
-                                c2.opacity(Double(0.15 + coverBass * 0.45 * glowFactor)),
+                                c1.opacity(Double(0.28 + coverBass * 0.52 * glowFactor)),
+                                c2.opacity(Double(0.14 + coverBass * 0.42 * glowFactor)),
                                 Color.clear
                             ],
                             center: .center,
-                            startRadius: 20,
+                            startRadius: 10,
                             endRadius: w * (0.28 + coverBass * 0.14)
                         )
                     )
                     .frame(width: w * (0.55 + coverBass * 0.25), height: w * (0.55 + coverBass * 0.25))
                     .position(x: w * 0.22, y: h * 0.45)
-                    .blur(radius: w * 0.08)
             }
             .clipped()
-            .drawingGroup()
             
             HStack(spacing: 40) {
                 // Left Side: Artwork & Title
@@ -491,46 +862,38 @@ struct VisualizerOverlay: View {
                         RoundedRectangle(cornerRadius: 36, style: .continuous)
                             .fill(
                                 RadialGradient(
-                                    gradient: Gradient(colors: [
-                                        c1.opacity(Double(0.45 + coverBass * 0.55 * glowFactor)),
-                                        c2.opacity(Double(0.3 + coverBass * 0.5 * glowFactor)),
+                                    colors: [
+                                        c1.opacity(Double(0.5 + coverBass * 0.5 * glowFactor)),
+                                        c2.opacity(Double(0.3 + coverBass * 0.45 * glowFactor)),
                                         Color.clear
-                                    ]),
+                                    ],
                                     center: .center,
                                     startRadius: 10,
                                     endRadius: (w * 0.22) * (0.8 + coverBass * 0.45)
                                 )
                             )
                             .frame(width: w * (0.24 + coverBass * 0.08), height: w * (0.24 + coverBass * 0.08))
-                            .blur(radius: 24 + coverBass * 32 * glowFactor)
                         
                         // 2. High-energy inner bloom halo
                         RoundedRectangle(cornerRadius: 28, style: .continuous)
                             .fill(
-                                LinearGradient(
+                                RadialGradient(
                                     colors: [
-                                        c1.opacity(Double(0.5 + coverBass * 0.5 * glowFactor)),
-                                        c2.opacity(Double(0.35 + coverBass * 0.5 * glowFactor))
+                                        c1.opacity(Double(0.6 + coverBass * 0.4 * glowFactor)),
+                                        c2.opacity(Double(0.35 + coverBass * 0.45 * glowFactor)),
+                                        Color.clear
                                     ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                                    center: .center,
+                                    startRadius: 5,
+                                    endRadius: (w * 0.22) * 0.6
                                 )
                             )
                             .frame(width: w * (0.225 + coverBass * 0.025), height: w * (0.225 + coverBass * 0.025))
-                            .blur(radius: 10 + coverBass * 16 * glowFactor)
                         
-                        // 3. Cover Artwork Image Container
+                        // 3. Cover Artwork Image Container (cached in memory)
                         Group {
-                            if let coverUrl = store.state.coverImageURL, let nsImage = NSImage(contentsOf: coverUrl) {
-                                Image(nsImage: nsImage)
-                                    .resizable()
-                                    .scaledToFill()
-                            } else if let defaultArt = store.defaultArtwork {
-                                Image(nsImage: defaultArt)
-                                    .resizable()
-                                    .scaledToFill()
-                            } else if let firstThumb = store.thumbnails.first?.image {
-                                Image(nsImage: firstThumb)
+                            if let img = store.currentCoverImage {
+                                Image(nsImage: img)
                                     .resizable()
                                     .scaledToFill()
                             } else {
@@ -558,10 +921,8 @@ struct VisualizerOverlay: View {
                                     lineWidth: 1.5 + coverBass * 2.5
                                 )
                         )
-                        // Multi-layered dynamic audio-reactive shadow glow
-                        .shadow(color: c1.opacity(Double(0.4 + coverBass * 0.6 * glowFactor)), radius: 25 + coverBass * 40 * glowFactor, x: 0, y: 10)
-                        .shadow(color: c2.opacity(Double(0.3 + coverBass * 0.55 * glowFactor)), radius: 10 + coverBass * 22 * glowFactor, x: 0, y: 0)
-                        .shadow(color: Color.white.opacity(Double(coverBass * 0.35 * glowFactor)), radius: 8 + coverBass * 14 * glowFactor, x: 0, y: 0)
+                        // Hardware-accelerated fixed radius shadow
+                        .shadow(color: c1.opacity(Double(0.35 + coverBass * 0.5 * glowFactor)), radius: 22, x: 0, y: 10)
                         // Dynamic beat bounce scale
                         .scaleEffect(1.0 + (coverBass * 0.04))
                     }
@@ -591,194 +952,50 @@ struct VisualizerOverlay: View {
                 VStack {
                     Spacer()
                     
-                    // Premium Visualizer Designs
+                    // Hardware-accelerated Canvas Visualizers (1 draw call, 60 FPS)
                     Group {
                         if config.type == .spectrumBars {
-                            // Mirrored Glassmorphism Bars
-                            HStack(alignment: .center, spacing: w * 0.004) {
-                                ForEach(0..<40, id: \.self) { i in
-                                    let amp = max(0.02, currentAmplitudes[i])
-                                    let barHeight = amp * h * 0.5
-                                    
-                                    RoundedRectangle(cornerRadius: w * 0.002, style: .continuous)
-                                        .fill(LinearGradient(colors: [c1, c2], startPoint: .bottom, endPoint: .top))
-                                        .frame(width: w * 0.007, height: barHeight)
-                                        .shadow(color: c1.opacity(glow * 0.5), radius: glow * 10)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: w * 0.002, style: .continuous)
-                                                .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
-                                        )
-                                }
-                            }
-                            .frame(height: h * 0.6)
+                            SpectrumBarsCanvas(
+                                amplitudes: currentAmplitudes,
+                                color1: c1,
+                                color2: c2,
+                                glow: glow,
+                                width: w * 0.45,
+                                height: h * 0.6
+                            )
+                            .frame(width: w * 0.45, height: h * 0.6)
                         } else if config.type == .waveform {
-                            // Smooth Siri-style Glowing Waveform
-                            ZStack {
-                                // The glowing fill
-                                Path { path in
-                                    let width = w * 0.45
-                                    let step = width / 39.0
-                                    let midY = h * 0.25
-                                    
-                                    path.move(to: CGPoint(x: 0, y: midY))
-                                    for i in 1..<40 {
-                                        let prevX = CGFloat(i - 1) * step
-                                        let currX = CGFloat(i) * step
-                                        let prevY = midY - (max(0.01, currentAmplitudes[i-1]) * h * 0.25)
-                                        let currY = midY - (max(0.01, currentAmplitudes[i]) * h * 0.25)
-                                        let midPoint = CGPoint(x: (prevX + currX) / 2, y: (prevY + currY) / 2)
-                                        
-                                        if i == 1 {
-                                            path.addLine(to: midPoint)
-                                        } else {
-                                            path.addQuadCurve(to: midPoint, control: CGPoint(x: prevX, y: prevY))
-                                        }
-                                    }
-                                    path.addLine(to: CGPoint(x: width, y: midY - (max(0.01, currentAmplitudes[39]) * h * 0.25)))
-                                    
-                                    // Mirror bottom half
-                                    for i in (1..<40).reversed() {
-                                        let prevX = CGFloat(i) * step
-                                        let currX = CGFloat(i - 1) * step
-                                        let prevY = midY + (max(0.01, currentAmplitudes[i]) * h * 0.25)
-                                        let currY = midY + (max(0.01, currentAmplitudes[i-1]) * h * 0.25)
-                                        let midPoint = CGPoint(x: (prevX + currX) / 2, y: (prevY + currY) / 2)
-                                        
-                                        if i == 39 {
-                                            path.addLine(to: midPoint)
-                                        } else {
-                                            path.addQuadCurve(to: midPoint, control: CGPoint(x: prevX, y: prevY))
-                                        }
-                                    }
-                                    path.addLine(to: CGPoint(x: 0, y: midY + (max(0.01, currentAmplitudes[0]) * h * 0.25)))
-                                    path.closeSubpath()
-                                }
-                                .fill(LinearGradient(colors: [c1, c2], startPoint: .leading, endPoint: .trailing))
-                                .blur(radius: glow * 10)
-                                .opacity(0.8)
-                                
-                                // Center bright stroke line
-                                Path { path in
-                                    let width = w * 0.45
-                                    let step = width / 39.0
-                                    let midY = h * 0.25
-                                    
-                                    path.move(to: CGPoint(x: 0, y: midY - (max(0.01, currentAmplitudes[0]) * h * 0.25)))
-                                    for i in 1..<40 {
-                                        let prevX = CGFloat(i - 1) * step
-                                        let currX = CGFloat(i) * step
-                                        let prevY = midY - (max(0.01, currentAmplitudes[i-1]) * h * 0.25)
-                                        let currY = midY - (max(0.01, currentAmplitudes[i]) * h * 0.25)
-                                        let midPoint = CGPoint(x: (prevX + currX) / 2, y: (prevY + currY) / 2)
-                                        
-                                        if i == 1 {
-                                            path.addLine(to: midPoint)
-                                        } else {
-                                            path.addQuadCurve(to: midPoint, control: CGPoint(x: prevX, y: prevY))
-                                        }
-                                    }
-                                    path.addLine(to: CGPoint(x: width, y: midY - (max(0.01, currentAmplitudes[39]) * h * 0.25)))
-                                }
-                                .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                                .shadow(color: c1.opacity(0.8), radius: glow * 5)
-                            }
+                            WaveformCanvas(
+                                amplitudes: currentAmplitudes,
+                                color1: c1,
+                                color2: c2,
+                                glow: glow,
+                                width: w * 0.45,
+                                height: h * 0.5
+                            )
                             .frame(width: w * 0.45, height: h * 0.5)
                         } else if config.type == .circular {
-                            // Ultra Premium Circular (Trap Nation Style)
-                            ZStack {
-                                let bassAmp = currentAmplitudes[0...3].reduce(0, +) / 4.0
-                                let centerScale = 1.0 + (bassAmp * 0.15)
-                                
-                                // Inner Artwork Circle (Pulsing & Rotating)
-                                ZStack {
-                                    if let firstThumb = store.thumbnails.first?.image {
-                                        Image(nsImage: firstThumb)
-                                            .resizable()
-                                            .scaledToFill()
-                                    } else if let bgUrl = store.state.backgroundURL, let nsImage = NSImage(contentsOf: bgUrl), bgUrl.pathExtension.lowercased() != "mp4" {
-                                        Image(nsImage: nsImage)
-                                            .resizable()
-                                            .scaledToFill()
-                                    } else {
-                                        Color.gray.opacity(0.3)
-                                    }
-                                }
-                                .frame(width: w * 0.15, height: w * 0.15)
-                                .clipShape(Circle())
-                                .rotationEffect(Angle(degrees: phase * 15)) // Slow rotation
-                                .scaleEffect(centerScale)
-                                .shadow(color: c1.opacity(glow * 0.8), radius: glow * 30)
-                                .overlay(
-                                    Circle()
-                                        .stroke(LinearGradient(colors: [c1, c2], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 4)
-                                        .scaleEffect(centerScale)
-                                )
-                                
-                                // Symmetrical Radial Bars
-                                let numBars = 90
-                                ForEach(0..<numBars, id: \.self) { i in
-                                    // Symmetrical mapping: 0 to 45 maps to 0..39 spectrum bins
-                                    let isRightHalf = i >= (numBars / 2)
-                                    let indexInHalf = isRightHalf ? (numBars - 1 - i) : i
-                                    let mappedIdx = Int((Double(indexInHalf) / Double(numBars / 2)) * 39.0)
-                                    
-                                    let amp = max(0.01, currentAmplitudes[mappedIdx])
-                                    let barHeight = amp * h * 0.25
-                                    // Start from bottom (90 degrees) and spread outwards symmetrically
-                                    let angle = Angle(degrees: Double(i) / Double(numBars) * 360.0 + 90.0) 
-                                    
-                                    // The main bar
-                                    RoundedRectangle(cornerRadius: w * 0.002, style: .continuous)
-                                        .fill(LinearGradient(colors: [c1, c2.opacity(0.5)], startPoint: .bottom, endPoint: .top))
-                                        .frame(width: w * 0.0035, height: barHeight)
-                                        .offset(y: -w * 0.085 - barHeight / 2) // Push out from center artwork
-                                        .rotationEffect(angle)
-                                        .scaleEffect(centerScale)
-                                        .shadow(color: c1.opacity(glow * 0.5), radius: glow * 10)
-                                        
-                                    // A glowing dot at the end of the bar for extra flair
-                                    Circle()
-                                        .fill(c2)
-                                        .frame(width: w * 0.004)
-                                        .offset(y: -w * 0.085 - barHeight - (w * 0.005))
-                                        .rotationEffect(angle)
-                                        .scaleEffect(centerScale)
-                                        .shadow(color: c2, radius: glow * 5)
-                                        .opacity(amp > 0.05 ? 1.0 : 0.0) // Only show dots for loud frequencies
-                                }
-                            }
+                            CircularVisualizerCanvas(
+                                amplitudes: currentAmplitudes,
+                                color1: c1,
+                                color2: c2,
+                                glow: glow,
+                                phase: phase,
+                                artworkImage: store.currentCoverImage,
+                                width: w * 0.45,
+                                height: h * 0.6
+                            )
                             .frame(width: w * 0.45, height: h * 0.6)
                         } else {
-                            // Frequency Reactive - High Energy Geometric Rings
-                            let bass = currentAmplitudes[0...3].reduce(0, +) / 4.0
-                            let mid = currentAmplitudes[10...15].reduce(0, +) / 6.0
-                            let treble = currentAmplitudes[30...35].reduce(0, +) / 6.0
-                            
-                            ZStack {
-                                // Bass Ring (Solid)
-                                Circle()
-                                    .fill(c1)
-                                    .frame(width: w * 0.1 + (bass * w * 0.3))
-                                    .blur(radius: glow * 20)
-                                    .opacity(0.8)
-                                    
-                                // Mid Ring (Dashed/Stroked)
-                                Circle()
-                                    .stroke(c2, style: StrokeStyle(lineWidth: w * 0.005 + (mid * w * 0.02), dash: [10, 15]))
-                                    .frame(width: w * 0.15 + (mid * w * 0.4))
-                                    .rotationEffect(Angle(degrees: phase * 100))
-                                    .shadow(color: c2.opacity(glow * 0.8), radius: glow * 10)
-                                    
-                                // Treble Points
-                                ForEach(0..<8, id: \.self) { i in
-                                    Circle()
-                                        .fill(Color.white)
-                                        .frame(width: w * 0.01 + (treble * w * 0.02))
-                                        .offset(y: -w * 0.1 - (treble * w * 0.15))
-                                        .rotationEffect(Angle(degrees: (Double(i) / 8.0 * 360.0) + (phase * -50)))
-                                        .shadow(color: .white, radius: glow * 10)
-                                }
-                            }
+                            FrequencyReactiveCanvas(
+                                amplitudes: currentAmplitudes,
+                                color1: c1,
+                                color2: c2,
+                                glow: glow,
+                                phase: phase,
+                                width: w * 0.45,
+                                height: h * 0.5
+                            )
                             .frame(width: w * 0.45, height: h * 0.5)
                         }
                     }
@@ -789,8 +1006,7 @@ struct VisualizerOverlay: View {
                 .padding(.trailing, w * 0.05)
             }
         }
-        .scaleEffect(1.0 + (globalBassAmp * 0.04)) // Cinematic Camera Pump on Beat!
-        .animation(.spring(response: 0.1, dampingFraction: 0.6, blendDuration: 0.0), value: globalBassAmp)
+        .scaleEffect(1.0 + (globalBassAmp * 0.04)) // Cinematic Camera Pump directly driven by smoothed bass
         .onReceive(timer) { _ in
             if store.isPlaying && !store.spectrumData.isEmpty {
                 phase += 0.015

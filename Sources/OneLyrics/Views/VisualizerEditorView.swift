@@ -321,8 +321,7 @@ struct VisualizerInspectorSidebar: View {
                     
                     if store.state.coverImageURL != nil {
                         Button(action: {
-                            store.state.coverImageURL = nil
-                            store.objectWillChange.send()
+                            store.clearCoverImage()
                         }) {
                             Text("Reset Cover to Original")
                                 .font(.system(size: 11, weight: .medium))

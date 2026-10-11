@@ -200,8 +200,7 @@ struct AssetSidebar: View {
                 
                 if store.state.coverImageURL != nil {
                     Button(action: { 
-                        store.state.coverImageURL = nil
-                        store.objectWillChange.send()
+                        store.clearCoverImage()
                     }) {
                         Text("Reset to Original")
                             .font(.system(size: 12, weight: .semibold))
