@@ -12,6 +12,7 @@ class ProjectStore: ObservableObject {
     @Published var isShowingLyricsFetch: Bool = false
     @Published var isShowingBackgroundFetch: Bool = false
     @Published var isShowingThumbnailMaker: Bool = false
+    @Published var isShowingCoverSearch: Bool = false
     
     // Modal Persistent States
     @Published var bgSearchQuery: String = ""
@@ -19,9 +20,18 @@ class ProjectStore: ObservableObject {
     
     @Published var audioSearchQuery: String = ""
     @Published var audioSearchResults: [YTResult] = []
+    
+    @Published var coverSearchQuery: String = ""
+    @Published var coverSearchResults: [YTResult] = []
     // New states for Timeline Tracks
     @Published var waveformData: [Float] = []
+    @Published var spectrumData: [[Float]] = []
+    @Published var spectrumFps: Double = 30.0
     @Published var thumbnails: [(time: Double, image: NSImage)] = []
+    @Published var extractedColor1: String = "#1A1A24"
+    @Published var extractedColor2: String = "#0D0D14"
+    @Published var defaultArtwork: NSImage? = nil
+    
     
     var undoManager: UndoManager?
     
@@ -63,7 +73,7 @@ class ProjectStore: ObservableObject {
         return 60000 // 60s default
     }
     
-    func setAudio(url: URL) {
+    func setAudio(url: URL, artwork: NSImage? = nil) {
         if !FileManager.default.fileExists(atPath: url.path) {
             state.audioURL = nil
             waveformData = []
@@ -73,19 +83,60 @@ class ProjectStore: ObservableObject {
         state.audioURL = url
         setupPlayer(url: url)
         
-        // Generate waveform
+        self.defaultArtwork = artwork // Clear old or set provided
+        
+        // Generate waveform and spectrum
         Task {
-            let data = await WaveformGenerator.generateWaveform(for: url)
-            DispatchQueue.main.async {
-                self.waveformData = data
+            if let result = await AudioAnalyzer.analyze(url: url) {
+                DispatchQueue.main.async {
+                    self.waveformData = result.waveform
+                    self.spectrumData = result.spectrum
+                    self.spectrumFps = result.spectrumFps
+                }
+            }
+            
+            if artwork == nil {
+                // Try to load ID3 artwork
+                let asset = AVURLAsset(url: url)
+                if let artworkData = try? await asset.load(.commonMetadata).first(where: { $0.commonKey == .commonKeyArtwork }),
+                   let data = try? await artworkData.load(.dataValue),
+                   let image = NSImage(data: data) {
+                    DispatchQueue.main.async {
+                        self.defaultArtwork = image
+                        if self.thumbnails.isEmpty {
+                            self.thumbnails = [(time: 0, image: image)]
+                            self.extractColorsIfNeeded()
+                        }
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    if self.thumbnails.isEmpty {
+                        self.thumbnails = [(time: 0, image: artwork!)]
+                        self.extractColorsIfNeeded()
+                    }
+                }
             }
         }
     }
     
-    func importAndConvertAudio(url: URL, forceConvert: Bool = false) {
+    func setCoverImage(url: URL) {
+        state.coverImageURL = url
+        if let img = NSImage(contentsOf: url) {
+            if let palette = ImageColorExtractor.extractProminentColors(from: img) {
+                extractedColor1 = palette.bg1
+                extractedColor2 = palette.bg2
+                state.visualizerConfig.color1 = palette.fg1
+                state.visualizerConfig.color2 = palette.fg2
+            }
+        }
+        objectWillChange.send()
+    }
+    
+    func importAndConvertAudio(url: URL, forceConvert: Bool = false, artwork: NSImage? = nil) {
         let ext = url.pathExtension.lowercased()
         if !forceConvert && (ext == "m4a" || ext == "wav" || ext == "aiff") {
-            setAudio(url: url)
+            setAudio(url: url, artwork: artwork)
             return
         }
         
@@ -94,14 +145,14 @@ class ProjectStore: ObservableObject {
             do {
                 let convertedUrl = try await AudioConverter.convertToM4A(sourceURL: url)
                 DispatchQueue.main.async {
-                    self.setAudio(url: convertedUrl)
+                    self.setAudio(url: convertedUrl, artwork: artwork)
                     self.isConvertingAudio = false
                 }
             } catch {
                 DispatchQueue.main.async {
                     print("Conversion failed: \(error)")
                     self.isConvertingAudio = false
-                    self.setAudio(url: url) // Fallback to original
+                    self.setAudio(url: url, artwork: artwork) // Fallback to original
                 }
             }
         }
@@ -127,6 +178,7 @@ class ProjectStore: ObservableObject {
                 let thumbs = await ThumbnailGenerator.generateThumbnails(for: url)
                 DispatchQueue.main.async {
                     self.thumbnails = thumbs
+                    self.extractColorsIfNeeded()
                 }
             }
             bp.actionAtItemEnd = .none
@@ -157,6 +209,7 @@ class ProjectStore: ObservableObject {
             }
             if let img = NSImage(contentsOf: url) {
                 self.thumbnails = [(time: 0, image: img)]
+                self.extractColorsIfNeeded()
             } else {
                 self.thumbnails = []
             }
@@ -279,7 +332,21 @@ class ProjectStore: ObservableObject {
         state.lyrics.removeAll { $0.id == id }
         registerUndo(oldState: oldState)
     }
-    
+    // Extract prominent colors for the visualizer from the thumbnail/background
+    func extractColorsIfNeeded() {
+        guard state.type == .visualizer else { return }
+        guard let thumb = thumbnails.first?.image else { return }
+        
+        if let palette = ImageColorExtractor.extractProminentColors(from: thumb) {
+            extractedColor1 = palette.bg1
+            extractedColor2 = palette.bg2
+            
+            // Auto-match visualizer to foreground bright colors initially
+            state.visualizerConfig.color1 = palette.fg1
+            state.visualizerConfig.color2 = palette.fg2
+        }
+    }
+
     func clearLyrics() {
         let oldState = self.state
         state.lyrics.removeAll()

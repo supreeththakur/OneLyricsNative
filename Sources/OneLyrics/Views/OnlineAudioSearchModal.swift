@@ -187,9 +187,23 @@ struct OnlineAudioSearchModal: View {
         Task {
             do {
                 let url = try await ytdl.downloadAudio(id: result.id)
+                
+                // Fetch thumbnail
+                let thumbUrlStr = "https://i.ytimg.com/vi/\(result.id)/maxresdefault.jpg"
+                var thumbImage: NSImage? = nil
+                if let tUrl = URL(string: thumbUrlStr), let data = try? Data(contentsOf: tUrl), let img = NSImage(data: data) {
+                    thumbImage = img
+                }
+                if thumbImage == nil {
+                    let fallbackUrlStr = "https://i.ytimg.com/vi/\(result.id)/hqdefault.jpg"
+                    if let fUrl = URL(string: fallbackUrlStr), let data = try? Data(contentsOf: fUrl), let img = NSImage(data: data) {
+                        thumbImage = img
+                    }
+                }
+                
                 DispatchQueue.main.async {
                     // Force convert to fix YouTube DASH m4a double-duration metadata bug
-                    store.importAndConvertAudio(url: url, forceConvert: true)
+                    self.store.importAndConvertAudio(url: url, forceConvert: true, artwork: thumbImage)
                     self.downloadingId = nil
                     self.isPresented = false
                 }

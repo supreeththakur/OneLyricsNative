@@ -121,6 +121,100 @@ struct AssetSidebar: View {
                 .buttonStyle(.plain)
             }
             
+            // Cover Art Section
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Cover Art").font(.subheadline).foregroundColor(.gray)
+                Button(action: { importCoverArt() }) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                            .foregroundColor(store.state.coverImageURL != nil || store.defaultArtwork != nil ? .green.opacity(0.5) : .gray.opacity(0.5))
+                            .background(store.state.coverImageURL != nil || store.defaultArtwork != nil ? Color.green.opacity(0.05) : Color.white.opacity(0.02))
+                            .cornerRadius(12)
+                        
+                        if store.state.coverImageURL != nil {
+                            VStack(spacing: 8) {
+                                Image(systemName: "photo.artframe")
+                                    .font(.title2)
+                                    .foregroundColor(.green)
+                                Text("Custom Cover")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
+                        } else if store.defaultArtwork != nil {
+                            VStack(spacing: 8) {
+                                Image(systemName: "photo.artframe")
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                                Text("Original Cover")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                        } else {
+                            VStack(spacing: 8) {
+                                Image(systemName: "photo.artframe")
+                                    .font(.title2)
+                                    .foregroundColor(.gray)
+                                Text("Import Cover")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                    }
+                    .frame(height: 80)
+                }
+                .buttonStyle(.plain)
+                
+                // YouTube Cover Search & Local File Buttons
+                HStack(spacing: 8) {
+                    Button(action: { store.isShowingCoverSearch = true }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "play.rectangle.fill")
+                                .font(.system(size: 11))
+                            Text("YouTube Cover")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.18))
+                        .foregroundColor(.red)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button(action: { importCoverArt() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 11))
+                            Text("Choose File")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1))
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                if store.state.coverImageURL != nil {
+                    Button(action: { 
+                        store.state.coverImageURL = nil
+                        store.objectWillChange.send()
+                    }) {
+                        Text("Reset to Original")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.orange)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
             // Lyrics Control Section
             VStack(alignment: .leading, spacing: 12) {
                 Text("Lyrics").font(.subheadline).foregroundColor(.gray)
@@ -218,6 +312,15 @@ struct AssetSidebar: View {
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
             store.setBackground(url: url)
+        }
+    }
+    
+    private func importCoverArt() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            store.setCoverImage(url: url)
         }
     }
     

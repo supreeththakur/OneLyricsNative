@@ -191,6 +191,18 @@ struct ContentView: View {
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
             
+            // Cover Image Search Modal Overlay
+            if store.isShowingCoverSearch {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { store.isShowingCoverSearch = false }
+                    .zIndex(100)
+                
+                OnlineCoverSearchModal(isPresented: $store.isShowingCoverSearch)
+                    .zIndex(101)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            
             // YouTube Publish Modal Overlay
             if showYouTubePublish {
                 Color.black.opacity(0.6)

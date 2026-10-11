@@ -158,6 +158,18 @@ struct VisualizerEditorView: View {
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
             
+            // Cover Image Search Modal Overlay
+            if store.isShowingCoverSearch {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .onTapGesture { store.isShowingCoverSearch = false }
+                    .zIndex(100)
+                
+                OnlineCoverSearchModal(isPresented: $store.isShowingCoverSearch)
+                    .zIndex(101)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+            
             // YouTube Publish Modal Overlay
             if showYouTubePublish {
                 Color.black.opacity(0.6)
@@ -188,24 +200,185 @@ struct VisualizerInspectorSidebar: View {
                     .tracking(1.5)
                     .padding(.top, 10)
                 
-                VStack(spacing: 20) {
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 50))
-                        .foregroundColor(.purple)
+                // Visualizer Type & Preset
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Style")
+                        .font(.system(size: 13, weight: .semibold))
                     
-                    Text("Visualizer Controls")
-                        .font(.headline)
-                        .foregroundColor(.white)
+                    Picker("Type", selection: Binding(
+                        get: { store.state.visualizerConfig.type },
+                        set: { store.state.visualizerConfig.type = $0; store.objectWillChange.send() }
+                    )) {
+                        ForEach(VisualizerType.allCases, id: \.self) { type in
+                            Text(type.rawValue).tag(type)
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
                     
-                    Text("Visualizer-specific settings will appear here in the future.")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
+                    Picker("Preset", selection: Binding(
+                        get: { store.state.visualizerConfig.preset },
+                        set: { store.state.visualizerConfig.preset = $0; store.objectWillChange.send() }
+                    )) {
+                        ForEach(VisualizerPreset.allCases, id: \.self) { preset in
+                            Text(preset.rawValue).tag(preset)
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
                 }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.white.opacity(0.05))
-                .cornerRadius(12)
+                
+                Divider().background(Color.white.opacity(0.1))
+                
+                // Colors & Aesthetics
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Aesthetics")
+                        .font(.system(size: 13, weight: .semibold))
+                    
+                    // Note: Ideally use ColorPicker here, but string hex is fine for now
+                    HStack {
+                        Text("Color 1")
+                            .font(.caption)
+                        Spacer()
+                        ColorPicker("", selection: Binding(
+                            get: { Color(hex: store.state.visualizerConfig.color1) },
+                            set: { store.state.visualizerConfig.color1 = $0.toHex() ?? "#ffffff"; store.objectWillChange.send() }
+                        ))
+                    }
+                    
+                    HStack {
+                        Text("Color 2")
+                            .font(.caption)
+                        Spacer()
+                        ColorPicker("", selection: Binding(
+                            get: { Color(hex: store.state.visualizerConfig.color2) },
+                            set: { store.state.visualizerConfig.color2 = $0.toHex() ?? "#ff00ff"; store.objectWillChange.send() }
+                        ))
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text("Glow Intensity: \(String(format: "%.1f", store.state.visualizerConfig.glowIntensity))")
+                            .font(.caption)
+                        Slider(value: Binding(
+                            get: { store.state.visualizerConfig.glowIntensity },
+                            set: { store.state.visualizerConfig.glowIntensity = $0; store.objectWillChange.send() }
+                        ), in: 0...5)
+                    }
+                }
+                
+                Divider().background(Color.white.opacity(0.1))
+                
+                // Particles & Motion
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Effects")
+                        .font(.system(size: 13, weight: .semibold))
+                    
+                    Toggle("Enable Particles", isOn: Binding(
+                        get: { store.state.visualizerConfig.particlesEnabled },
+                        set: { store.state.visualizerConfig.particlesEnabled = $0; store.objectWillChange.send() }
+                    ))
+                    
+                    if store.state.visualizerConfig.particlesEnabled {
+                        VStack(alignment: .leading) {
+                            Text("Particle Count: \(store.state.visualizerConfig.particleCount)")
+                                .font(.caption)
+                            Slider(value: Binding(
+                                get: { Double(store.state.visualizerConfig.particleCount) },
+                                set: { store.state.visualizerConfig.particleCount = Int($0); store.objectWillChange.send() }
+                            ), in: 10...500)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text("Motion Intensity: \(String(format: "%.1f", store.state.visualizerConfig.motionIntensity))")
+                            .font(.caption)
+                        Slider(value: Binding(
+                            get: { store.state.visualizerConfig.motionIntensity },
+                            set: { store.state.visualizerConfig.motionIntensity = $0; store.objectWillChange.send() }
+                        ), in: 0...3)
+                    }
+                }
+                
+                Divider().background(Color.white.opacity(0.1))
+                
+                // Cover Art
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Cover Art")
+                        .font(.system(size: 13, weight: .semibold))
+                    
+                    Button(action: { store.isShowingCoverSearch = true }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.rectangle.fill")
+                                .font(.system(size: 12))
+                            Text("Search YouTube Cover")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.18))
+                        .foregroundColor(.red)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    if store.state.coverImageURL != nil {
+                        Button(action: {
+                            store.state.coverImageURL = nil
+                            store.objectWillChange.send()
+                        }) {
+                            Text("Reset Cover to Original")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.orange)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                
+                Divider().background(Color.white.opacity(0.1))
+                
+                // Text Overlay
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Text Overlay")
+                        .font(.system(size: 13, weight: .semibold))
+                    
+                    Toggle("Show Title", isOn: Binding(
+                        get: { store.state.visualizerConfig.textOverlay.showTitle },
+                        set: { store.state.visualizerConfig.textOverlay.showTitle = $0; store.objectWillChange.send() }
+                    ))
+                    if store.state.visualizerConfig.textOverlay.showTitle {
+                        TextField("Song Title", text: Binding(
+                            get: { store.state.visualizerConfig.textOverlay.title },
+                            set: { store.state.visualizerConfig.textOverlay.title = $0; store.objectWillChange.send() }
+                        ))
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    
+                    Toggle("Show Artist", isOn: Binding(
+                        get: { store.state.visualizerConfig.textOverlay.showArtist },
+                        set: { store.state.visualizerConfig.textOverlay.showArtist = $0; store.objectWillChange.send() }
+                    ))
+                    if store.state.visualizerConfig.textOverlay.showArtist {
+                        TextField("Artist Name", text: Binding(
+                            get: { store.state.visualizerConfig.textOverlay.artist },
+                            set: { store.state.visualizerConfig.textOverlay.artist = $0; store.objectWillChange.send() }
+                        ))
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text("Font Family")
+                            .font(.caption)
+                        Picker("", selection: Binding(
+                            get: { store.state.typography.fontFamily },
+                            set: { store.state.typography.fontFamily = $0; store.objectWillChange.send() }
+                        )) {
+                            ForEach(FontManager.shared.availableFonts, id: \.self) { font in
+                                Text(font).tag(font)
+                            }
+                        }
+                        .pickerStyle(MenuPickerStyle())
+                    }
+                }
                 
                 Spacer()
             }

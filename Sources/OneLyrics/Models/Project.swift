@@ -5,6 +5,74 @@ enum ProjectType: String, Codable, CaseIterable {
     case visualizer = "Visualizer"
 }
 
+enum VisualizerType: String, Codable, CaseIterable {
+    case waveform = "Waveform"
+    case spectrumBars = "Spectrum Bars"
+    case circular = "Circular"
+    case frequencyReactive = "Frequency Reactive"
+}
+
+enum VisualizerPreset: String, Codable, CaseIterable {
+    case cinematic = "Cinematic"
+    case minimal = "Minimal"
+    case electronic = "Electronic"
+    case retro = "Retro"
+    case atmospheric = "Atmospheric"
+    case custom = "Custom"
+}
+
+struct VisualizerTextOverlay: Codable {
+    var title: String = ""
+    var artist: String = ""
+    var customText: String = ""
+    var showTitle: Bool = true
+    var showArtist: Bool = true
+    var showCustomText: Bool = false
+    var positionX: Double = 0.5
+    var positionY: Double = 0.8
+    
+    init() {}
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        artist = try container.decodeIfPresent(String.self, forKey: .artist) ?? ""
+        customText = try container.decodeIfPresent(String.self, forKey: .customText) ?? ""
+        showTitle = try container.decodeIfPresent(Bool.self, forKey: .showTitle) ?? true
+        showArtist = try container.decodeIfPresent(Bool.self, forKey: .showArtist) ?? true
+        showCustomText = try container.decodeIfPresent(Bool.self, forKey: .showCustomText) ?? false
+        positionX = try container.decodeIfPresent(Double.self, forKey: .positionX) ?? 0.5
+        positionY = try container.decodeIfPresent(Double.self, forKey: .positionY) ?? 0.8
+    }
+}
+
+struct VisualizerConfig: Codable {
+    var type: VisualizerType = .spectrumBars
+    var preset: VisualizerPreset = .minimal
+    var color1: String = "#ff00ff"
+    var color2: String = "#00ffff"
+    var glowIntensity: Double = 1.0
+    var particlesEnabled: Bool = false
+    var particleCount: Int = 50
+    var motionIntensity: Double = 1.0
+    var textOverlay: VisualizerTextOverlay = VisualizerTextOverlay()
+    
+    init() {}
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decodeIfPresent(VisualizerType.self, forKey: .type) ?? .spectrumBars
+        preset = try container.decodeIfPresent(VisualizerPreset.self, forKey: .preset) ?? .minimal
+        color1 = try container.decodeIfPresent(String.self, forKey: .color1) ?? "#ff00ff"
+        color2 = try container.decodeIfPresent(String.self, forKey: .color2) ?? "#00ffff"
+        glowIntensity = try container.decodeIfPresent(Double.self, forKey: .glowIntensity) ?? 1.0
+        particlesEnabled = try container.decodeIfPresent(Bool.self, forKey: .particlesEnabled) ?? false
+        particleCount = try container.decodeIfPresent(Int.self, forKey: .particleCount) ?? 50
+        motionIntensity = try container.decodeIfPresent(Double.self, forKey: .motionIntensity) ?? 1.0
+        textOverlay = try container.decodeIfPresent(VisualizerTextOverlay.self, forKey: .textOverlay) ?? VisualizerTextOverlay()
+    }
+}
+
 struct LyricBlock: Identifiable, Codable {
     var id: UUID = UUID()
     var text: String
@@ -122,12 +190,14 @@ struct ProjectState: Codable, Identifiable {
     var lastModified: Date = Date()
     var audioURL: URL?
     var backgroundURL: URL?
+    var coverImageURL: URL?
     var durationMs: Double = 0
     var fps: Double = 30
     var lyrics: [LyricBlock] = []
     var templateId: String
     var typography: TypographyConfig
     var mediaConfig: MediaConfig = MediaConfig()
+    var visualizerConfig: VisualizerConfig = VisualizerConfig()
     var enableAutoTransliteration: Bool = true
     var showTransliteratedLyrics: Bool = true
     
@@ -152,12 +222,14 @@ struct ProjectState: Codable, Identifiable {
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? lastModified
         audioURL = try container.decodeIfPresent(URL.self, forKey: .audioURL)
         backgroundURL = try container.decodeIfPresent(URL.self, forKey: .backgroundURL)
+        coverImageURL = try container.decodeIfPresent(URL.self, forKey: .coverImageURL)
         durationMs = try container.decodeIfPresent(Double.self, forKey: .durationMs) ?? 0
         fps = try container.decodeIfPresent(Double.self, forKey: .fps) ?? 30
         lyrics = try container.decodeIfPresent([LyricBlock].self, forKey: .lyrics) ?? []
         templateId = try container.decodeIfPresent(String.self, forKey: .templateId) ?? TemplateManager.defaultTemplate
         typography = try container.decodeIfPresent(TypographyConfig.self, forKey: .typography) ?? TypographyConfig()
         mediaConfig = try container.decodeIfPresent(MediaConfig.self, forKey: .mediaConfig) ?? MediaConfig()
+        visualizerConfig = try container.decodeIfPresent(VisualizerConfig.self, forKey: .visualizerConfig) ?? VisualizerConfig()
         enableAutoTransliteration = try container.decodeIfPresent(Bool.self, forKey: .enableAutoTransliteration) ?? true
         showTransliteratedLyrics = try container.decodeIfPresent(Bool.self, forKey: .showTransliteratedLyrics) ?? true
     }
