@@ -513,8 +513,8 @@ class ProjectStore: ObservableObject {
             }
         }
         
-        // Periodic time observer for smooth playhead tracking
-        let interval = CMTime(seconds: 0.033, preferredTimescale: 1000) // ~30 fps
+        // Periodic time observer for ultra-smooth 60 fps playhead tracking and visualizer sync
+        let interval = CMTime(seconds: 0.016, preferredTimescale: 1000) // ~60 fps
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
             guard self.isPlaying else { return }
