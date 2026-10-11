@@ -480,6 +480,7 @@ struct VisualizerOverlay: View {
                     .blur(radius: w * 0.08)
             }
             .clipped()
+            .drawingGroup()
             
             HStack(spacing: 40) {
                 // Left Side: Artwork & Title
@@ -792,25 +793,37 @@ struct VisualizerOverlay: View {
         .animation(.spring(response: 0.1, dampingFraction: 0.6, blendDuration: 0.0), value: globalBassAmp)
         .onReceive(timer) { _ in
             if store.isPlaying && !store.spectrumData.isEmpty {
-                phase += 0.01
-                // Determine which frame to pick based on currentTimeMs
-                let timeSecs = store.currentTimeMs / 1000.0
-                let frameIndex = Int(timeSecs * store.spectrumFps)
+                phase += 0.015
+                // Get precise hardware time directly from AVPlayer for zero latency
+                let currentSecs: Double
+                if let p = store.player, let item = p.currentItem, item.status == .readyToPlay {
+                    let t = CMTimeGetSeconds(p.currentTime())
+                    currentSecs = (!t.isNaN && t >= 0) ? t : (store.currentTimeMs / 1000.0)
+                } else {
+                    currentSecs = store.currentTimeMs / 1000.0
+                }
+                
+                // Audio-visual sync calibration (+35ms compensation for display refresh and perceptual impact)
+                let leadTime = currentSecs + 0.035
+                let frameIndex = Int(leadTime * store.spectrumFps)
                 
                 if frameIndex >= 0 && frameIndex < store.spectrumData.count {
                     let frame = store.spectrumData[frameIndex]
-                    // Smoothly animate towards target
                     for i in 0..<40 {
                         let target = CGFloat(frame[i]) * CGFloat(config.motionIntensity)
-                        // Dynamic interpolation for snappier bass, smoother treble
-                        let smoothFactor = 0.2 + (0.1 * (Double(i)/40.0))
-                        currentAmplitudes[i] += (target - currentAmplitudes[i]) * CGFloat(smoothFactor)
+                        if target > currentAmplitudes[i] {
+                            // Instant punchy attack: 0-latency snap on kick drums and beats!
+                            currentAmplitudes[i] += (target - currentAmplitudes[i]) * 0.88
+                        } else {
+                            // Smooth, elegant decay
+                            currentAmplitudes[i] += (target - currentAmplitudes[i]) * 0.18
+                        }
                     }
                 }
             } else {
-                // Return to idle state slowly
+                // Return to idle state
                 for i in 0..<40 {
-                    currentAmplitudes[i] += (0.01 - currentAmplitudes[i]) * 0.05
+                    currentAmplitudes[i] += (0.01 - currentAmplitudes[i]) * 0.08
                 }
             }
         }
@@ -889,23 +902,15 @@ struct AmbientParticles: View {
                 
                 var pContext = context
                 pContext.opacity = min(1.0, opacity)
-                
-                // Depth-of-field (Bokeh) blur for far or very close particles
-                var blurRadius: Double = 0
-                if zDepth > 0.8 {
-                    blurRadius = (zDepth - 0.8) * 20.0
-                } else if zDepth < 0.3 {
-                    blurRadius = (0.3 - zDepth) * 15.0
-                }
-                
-                if blurRadius > 0 {
-                    pContext.addFilter(.blur(radius: blurRadius))
-                }
-                if isGlowing {
-                    pContext.addFilter(.shadow(color: color, radius: size * 1.5))
-                }
-                
                 pContext.fill(path, with: .color(color))
+                
+                // For glowing highlights, draw an outer soft halo without expensive filter passes
+                if isGlowing {
+                    let haloRect = CGRect(x: (x * w) - size * 0.5, y: (y * h) - size * 0.5, width: size * 2.0, height: size * 2.0)
+                    var haloContext = context
+                    haloContext.opacity = min(0.35, opacity * 0.4)
+                    haloContext.fill(Path(ellipseIn: haloRect), with: .color(color))
+                }
             }
         }
     }

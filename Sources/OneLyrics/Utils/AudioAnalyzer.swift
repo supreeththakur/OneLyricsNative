@@ -11,12 +11,17 @@ struct AudioAnalysisResult {
 actor AudioAnalyzer {
     static func analyze(url: URL) async -> AudioAnalysisResult? {
         return await Task.detached(priority: .userInitiated) {
-            do {
-                let file = try AVAudioFile(forReading: url)
-                let format = file.processingFormat
-                let sampleRate = format.sampleRate
-                let totalFrames = file.length
-                guard totalFrames > 0 else { return nil }
+            return analyzeSync(url: url)
+        }.value
+    }
+    
+    static func analyzeSync(url: URL) -> AudioAnalysisResult? {
+        do {
+            let file = try AVAudioFile(forReading: url)
+            let format = file.processingFormat
+            let sampleRate = format.sampleRate
+            let totalFrames = file.length
+            guard totalFrames > 0 else { return nil }
                 
                 // For waveform (1000 points)
                 let waveformSamplesPerPixel = max(1, Int(totalFrames) / 1000)
@@ -165,6 +170,5 @@ actor AudioAnalyzer {
                 print("Analyzer error: \(error)")
                 return nil
             }
-        }.value
     }
 }

@@ -390,6 +390,23 @@ class VideoExporter: ObservableObject {
                 let blackBgCI = CIImage(color: CIColor.black).cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
                 // ---------------------------------------------------
                 
+                // Initialize Visualizer Renderer if exporting a visualizer project
+                var visualizerRenderer: VisualizerFrameRenderer? = nil
+                if state.type == .visualizer {
+                    var spectrumResult: AudioAnalysisResult? = nil
+                    if let audioURL = resolvedAudioURL {
+                        spectrumResult = AudioAnalyzer.analyzeSync(url: audioURL)
+                    }
+                    visualizerRenderer = VisualizerFrameRenderer(
+                        width: width,
+                        height: height,
+                        fps: fps,
+                        state: state,
+                        spectrumResult: spectrumResult,
+                        colorSpace: colorSpace
+                    )
+                }
+                
                 // Render all video frames asynchronously
                 group.enter()
                 let videoQueue = DispatchQueue(label: "videoWriterQueue")
@@ -439,8 +456,17 @@ class VideoExporter: ObservableObject {
                                 compositeCI = base.composited(over: compositeCI)
                             }
                             
-                            // 3. Lyrics text overlay
-                            if let currentLyric = lyrics.first(where: { currentMs >= $0.startMs && currentMs <= $0.endMs }) {
+                            if state.type == .visualizer, let vizRenderer = visualizerRenderer {
+                                vizRenderer.renderFrame(
+                                    frameIndex: frameIndex,
+                                    timeSecs: Double(frameIndex) / Double(fps),
+                                    to: buffer,
+                                    ciContext: ciContext,
+                                    baseBgCI: baseCI
+                                )
+                            } else {
+                                // 3. Lyrics text overlay (EXISTING CODE PRESERVED)
+                                if let currentLyric = lyrics.first(where: { currentMs >= $0.startMs && currentMs <= $0.endMs }) {
                                 let anim = typography.animationStyle
                                 let t = currentMs
                                 let start = currentLyric.startMs
@@ -575,6 +601,7 @@ class VideoExporter: ObservableObject {
                             
                             // Render composite to pixel buffer using Hardware Accelerated CoreImage
                             ciContext.render(compositeCI, to: buffer, bounds: CGRect(x: 0, y: 0, width: width, height: height), colorSpace: colorSpace)
+                            }
                             
                             let presentationTime = CMTime(value: CMTimeValue(frameIndex), timescale: CMTimeScale(fps))
                             if !adaptor.append(buffer, withPresentationTime: presentationTime) {
