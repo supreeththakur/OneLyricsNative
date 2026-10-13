@@ -155,9 +155,10 @@ build_and_package_exporter "arm64" "OneLyricsExporter-AppleSilicon.dmg"
 echo "Uploading DMGs to GitHub..."
 export PATH="/usr/bin:$PATH"
 
-# Create a unified Suite release
+# Create a unified Suite release or update notes if it already exists
 if [ -f "ReleaseNotes/v${VERSION}.md" ]; then
-    gh release create v${VERSION} -t "OneLyrics Suite v${VERSION}" -F "ReleaseNotes/v${VERSION}.md" || true
+    gh release create v${VERSION} -t "OneLyrics Suite v${VERSION}" -F "ReleaseNotes/v${VERSION}.md" || \
+    gh release edit v${VERSION} -t "OneLyrics Suite v${VERSION}" -F "ReleaseNotes/v${VERSION}.md" || true
 else
     gh release create v${VERSION} -t "OneLyrics Suite v${VERSION}" -n "OneLyrics Suite v${VERSION} Release" || true
 fi
