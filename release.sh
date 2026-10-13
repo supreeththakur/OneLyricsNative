@@ -145,12 +145,12 @@ EOF
 rm -f AppIcon.icns
 generate_appicon
 
-# Build and package both architectures
-build_and_package_main "arm64" "OneLyrics-AppleSilicon.dmg"
+# Build and package both architectures (x86_64 first, then arm64 so local install is Apple Silicon native)
 build_and_package_main "x86_64" "OneLyrics-Intel.dmg"
-
-build_and_package_exporter "arm64" "OneLyricsExporter-AppleSilicon.dmg"
 build_and_package_exporter "x86_64" "OneLyricsExporter-Intel.dmg"
+
+build_and_package_main "arm64" "OneLyrics-AppleSilicon.dmg"
+build_and_package_exporter "arm64" "OneLyricsExporter-AppleSilicon.dmg"
 
 echo "Uploading DMGs to GitHub..."
 export PATH="/usr/bin:$PATH"
