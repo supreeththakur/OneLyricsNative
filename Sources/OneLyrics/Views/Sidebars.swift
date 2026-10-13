@@ -261,9 +261,25 @@ struct AssetSidebar: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Divider().background(Color.gray.opacity(0.3)).padding(.vertical, 4)
                     
-                    Text("Auto Transliteration")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                    HStack {
+                        Text("Auto Transliteration")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                        if store.state.enableAutoTransliteration {
+                            Button(action: { store.refreshAllTransliterations() }) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .font(.system(size: 9))
+                                    Text("Re-sync")
+                                        .font(.system(size: 10, weight: .medium))
+                                }
+                                .foregroundColor(.purple)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Re-transliterate all lyrics with latest engine")
+                        }
+                    }
                     
                     Toggle(isOn: Binding(
                         get: { store.state.enableAutoTransliteration },

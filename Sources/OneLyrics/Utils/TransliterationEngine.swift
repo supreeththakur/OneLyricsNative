@@ -11,16 +11,24 @@ class TransliterationEngine {
     static let shared = TransliterationEngine()
     
     func detectLanguage(text: String) -> DetectedLanguage {
-        let hindiRegex = try! NSRegularExpression(pattern: "[\\u0900-\\u097F]")
+        // Exclude shared Indic Danda (\u0964) and Double Danda (\u0965) from pure Hindi detection
+        let hindiRegex = try! NSRegularExpression(pattern: "[\\u0900-\\u0963\\u0966-\\u097F]")
         let kannadaRegex = try! NSRegularExpression(pattern: "[\\u0C80-\\u0CFF]")
         let punjabiRegex = try! NSRegularExpression(pattern: "[\\u0A00-\\u0A7F]")
         
         let range = NSRange(location: 0, length: text.utf16.count)
-        if hindiRegex.firstMatch(in: text, options: [], range: range) != nil {
-            return .hindi
-        } else if punjabiRegex.firstMatch(in: text, options: [], range: range) != nil {
+        let hindiCount = hindiRegex.numberOfMatches(in: text, options: [], range: range)
+        let punjabiCount = punjabiRegex.numberOfMatches(in: text, options: [], range: range)
+        let kannadaCount = kannadaRegex.numberOfMatches(in: text, options: [], range: range)
+        
+        let maxCount = max(hindiCount, punjabiCount, kannadaCount)
+        guard maxCount > 0 else { return .unknown }
+        
+        if punjabiCount == maxCount {
             return .punjabi
-        } else if kannadaRegex.firstMatch(in: text, options: [], range: range) != nil {
+        } else if hindiCount == maxCount {
+            return .hindi
+        } else if kannadaCount == maxCount {
             return .kannada
         }
         return .unknown
@@ -150,7 +158,10 @@ class TransliterationEngine {
                 if !hasVowelSign && !isHalant {
                     // Schwa deletion rule
                     var deleteSchwa = false
-                    if i == chars.count - 1 {
+                    let remaining = chars[(i+1)...]
+                    let isEndOfWord = remaining.allSatisfy { !$0.isLetter }
+                    
+                    if isEndOfWord {
                         deleteSchwa = true
                     } else if i > 0 && i < chars.count - 2 {
                         // Schwa deletion in the middle of a word (e.g. Karta -> Kar-ta instead of Karata)
@@ -287,8 +298,19 @@ class TransliterationEngine {
     
     // MARK: - Punjabi Transliteration (Advanced)
     private func transliteratePunjabiWord(_ word: String) -> String {
+        var w = word
+        // Pre-replacements for composite vowel bearers
+        let preReplacements: [(String, String)] = [
+            ("ੳੁ", "ਉ"), ("ੳੂ", "ਊ"), ("ੳੋ", "ਓ"),
+            ("ੲਿ", "ਇ"), ("ੲੀ", "ਈ"), ("ੲੇ", "ਏ"),
+            ("ਅੈ", "ਐ"), ("ਅੌ", "ਔ")
+        ]
+        for (k, v) in preReplacements {
+            w = w.replacingOccurrences(of: k, with: v)
+        }
+        
         var out = ""
-        let chars = Array(word.unicodeScalars).map { Character($0) }
+        let chars = Array(w.unicodeScalars).map { Character($0) }
         var i = 0
         
         let consonants: [Character: String] = [
@@ -297,7 +319,7 @@ class TransliterationEngine {
             "ਟ": "t", "ਠ": "th", "ਡ": "d", "ਢ": "dh", "ਣ": "n",
             "ਤ": "t", "ਥ": "th", "ਦ": "d", "ਧ": "dh", "ਨ": "n",
             "ਪ": "p", "ਫ": "ph", "ਬ": "b", "ਭ": "bh", "ਮ": "m",
-            "ਯ": "y", "ਰ": "r", "ਲ": "l", "ਵ": "v",
+            "ਯ": "y", "ਰ": "r", "ਲ": "l", "ਲ਼": "l", "ਵ": "v",
             "ਸ": "s", "ਹ": "h",
             
             "ਸ਼": "sh", "ਖ਼": "kh", "ਗ਼": "g", "ਜ਼": "z", "ੜ": "r", "ਫ਼": "f",
@@ -305,12 +327,13 @@ class TransliterationEngine {
         ]
         
         let nuktaConsonants: [Character: String] = [
-            "ਸ": "sh", "ਖ": "kh", "ਗ": "g", "ਜ": "z", "ਫ": "f", "ਡ": "r"
+            "ਸ": "sh", "ਖ": "kh", "ਗ": "g", "ਜ": "z", "ਫ": "f", "ਡ": "r", "ਲ": "l", "ਰ": "r"
         ]
         
         let independentVowels: [Character: String] = [
             "ਅ": "a", "ਆ": "aa", "ਇ": "i", "ਈ": "i", "ਉ": "u", "ਊ": "u",
-            "ਏ": "e", "ਐ": "ae", "ਓ": "o", "ਔ": "au"
+            "ਏ": "e", "ਐ": "ae", "ਓ": "o", "ਔ": "au",
+            "ੳ": "u", "ੲ": "i"
         ]
         
         let dependentVowels: [Character: String] = [
@@ -362,7 +385,10 @@ class TransliterationEngine {
                 
                 if !hasVowelSign && !isHalant {
                     var deleteSchwa = false
-                    if i == chars.count - 1 {
+                    let remaining = chars[(i+1)...]
+                    let isEndOfWord = remaining.allSatisfy { !$0.isLetter }
+                    
+                    if isEndOfWord {
                         deleteSchwa = true
                     } else if i > 0 && i < chars.count - 2 {
                         if let n1 = nextC, (consonants[n1] != nil || n1 == "਼" || n1 == "ੱ") {
@@ -410,8 +436,8 @@ class TransliterationEngine {
         out = out.replacingOccurrences(of: "iaa", with: "iya")
         out = out.replacingOccurrences(of: "uaa", with: "uwa")
         
-        if out.hasSuffix("un") {
-            out = String(out.dropLast())
+        if out.lowercased() == "nun" {
+            out = "Nu"
         }
         
         if out.count > 0 {

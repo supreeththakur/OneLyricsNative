@@ -93,6 +93,8 @@ class ProjectStore: ObservableObject {
         if let bg = initialState.backgroundURL {
             setBackground(url: bg)
         }
+        
+        autoUpdateTransliterations()
     }
     
     // Fallback duration if audio is not loaded or NaN
@@ -346,20 +348,51 @@ class ProjectStore: ObservableObject {
         registerUndo(oldState: oldState)
     }
     
+    func autoUpdateTransliterations(force: Bool = false) {
+        guard state.enableAutoTransliteration else { return }
+        var changed = false
+        for i in 0..<state.lyrics.count {
+            let lang = TransliterationEngine.shared.detectLanguage(text: state.lyrics[i].text)
+            if lang == .hindi || lang == .kannada || lang == .punjabi {
+                let current = state.lyrics[i].transliteratedText
+                // If force, or transliteratedText is missing, or contains un-transliterated non-Latin script characters
+                let hasUntransliteratedChars = current != nil && (TransliterationEngine.shared.detectLanguage(text: current!) != .unknown)
+                if force || current == nil || hasUntransliteratedChars {
+                    let fresh = TransliterationEngine.shared.transliterate(text: state.lyrics[i].text)
+                    if state.lyrics[i].transliteratedText != fresh {
+                        state.lyrics[i].transliteratedText = fresh
+                        changed = true
+                    }
+                }
+                if state.showTransliteratedLyrics && !state.lyrics[i].isTransliteratedActive {
+                    state.lyrics[i].isTransliteratedActive = true
+                    changed = true
+                }
+            }
+        }
+        if changed {
+            objectWillChange.send()
+        }
+    }
+    
+    func refreshAllTransliterations() {
+        let oldState = self.state
+        for i in 0..<state.lyrics.count {
+            let lang = TransliterationEngine.shared.detectLanguage(text: state.lyrics[i].text)
+            if lang == .hindi || lang == .kannada || lang == .punjabi {
+                state.lyrics[i].transliteratedText = TransliterationEngine.shared.transliterate(text: state.lyrics[i].text)
+                state.lyrics[i].isTransliteratedActive = state.showTransliteratedLyrics
+            }
+        }
+        registerUndo(oldState: oldState)
+        objectWillChange.send()
+    }
+    
     func toggleAutoTransliteration(enable: Bool) {
         let oldState = self.state
         state.enableAutoTransliteration = enable
-        // If enabling, we might want to auto transliterate all existing?
         if enable {
-            for i in 0..<state.lyrics.count {
-                if state.lyrics[i].transliteratedText == nil {
-                    let lang = TransliterationEngine.shared.detectLanguage(text: state.lyrics[i].text)
-                    if lang == .hindi || lang == .kannada || lang == .punjabi {
-                        state.lyrics[i].transliteratedText = TransliterationEngine.shared.transliterate(text: state.lyrics[i].text)
-                        state.lyrics[i].isTransliteratedActive = state.showTransliteratedLyrics
-                    }
-                }
-            }
+            refreshAllTransliterations()
         }
         registerUndo(oldState: oldState)
     }
