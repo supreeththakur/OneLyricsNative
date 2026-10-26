@@ -11,8 +11,6 @@ struct FetchBackgroundModal: View {
     @State private var isLoadingMore: Bool = false
     @State private var hasMoreResults: Bool = true
     @State private var errorMessage: String? = nil
-    @State private var showKeySettings: Bool = false
-    @State private var apiKeyInput: String = ""
     
     let columns = [GridItem(.adaptive(minimum: 148), spacing: 12)]
     
@@ -27,26 +25,7 @@ struct FetchBackgroundModal: View {
                 Text("Search Backgrounds")
                     .font(.headline)
                     .foregroundColor(.white)
-                
                 Spacer()
-                
-                // Key / Settings Button
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showKeySettings.toggle()
-                        if showKeySettings {
-                            loadCurrentKey()
-                        }
-                    }
-                } label: {
-                    Image(systemName: showKeySettings ? "key.fill" : "key")
-                        .foregroundColor(showKeySettings ? .yellow : .gray)
-                        .font(.system(size: 14))
-                }
-                .buttonStyle(.plain)
-                .help("Configure API Keys")
-                
-                // Close Button
                 Button { isPresented = false } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.gray)
@@ -65,11 +44,6 @@ struct FetchBackgroundModal: View {
                 }
             }
             .background(Color(white: 0.10))
-            
-            // ── Key Settings Drawer ──────────────────────────────────
-            if showKeySettings {
-                keySettingsDrawer
-            }
             
             // ── Search Bar ───────────────────────────────────────────
             HStack(spacing: 8) {
@@ -106,24 +80,13 @@ struct FetchBackgroundModal: View {
             
             // ── Error Banner ─────────────────────────────────────────
             if let err = errorMessage {
-                HStack(spacing: 8) {
+                HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                     Text(err)
                         .font(.caption)
                         .foregroundColor(.orange)
                     Spacer()
-                    if err.contains("API key") || err.contains("🔑") {
-                        Button("Enter Key") {
-                            withAnimation {
-                                showKeySettings = true
-                                loadCurrentKey()
-                            }
-                        }
-                        .font(.caption.bold())
-                        .foregroundColor(.yellow)
-                        .buttonStyle(.plain)
-                    }
                     Button { errorMessage = nil } label: {
                         Image(systemName: "xmark").font(.caption).foregroundColor(.gray)
                     }.buttonStyle(.plain)
@@ -189,73 +152,14 @@ struct FetchBackgroundModal: View {
         .cornerRadius(12)
         .shadow(radius: 24)
         .onChange(of: store.bgProvider) { _ in
+            // Clear results and re-search when provider changes
             store.bgSearchResults = []
             errorMessage = nil
             hasMoreResults = true
-            loadCurrentKey()
             if !store.bgSearchQuery.isEmpty {
                 performSearch(isNewSearch: true)
             }
         }
-    }
-    
-    // MARK: - Key Settings Drawer
-    
-    @ViewBuilder
-    private var keySettingsDrawer: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "key.fill")
-                .foregroundColor(.yellow)
-                .font(.system(size: 12))
-            Text("\(store.bgProvider.rawValue) API Key:")
-                .font(.caption)
-                .foregroundColor(.gray)
-            
-            SecureField("Paste your key here", text: $apiKeyInput)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundColor(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color(white: 0.18))
-                .cornerRadius(6)
-            
-            Button("Save") {
-                let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                UserDefaults.standard.set(trimmed, forKey: store.bgProvider.keySettingName)
-                errorMessage = nil
-                performSearch(isNewSearch: true)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            
-            if !apiKeyInput.isEmpty {
-                Button("Clear") {
-                    UserDefaults.standard.removeObject(forKey: store.bgProvider.keySettingName)
-                    apiKeyInput = ""
-                }
-                .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundColor(.red.opacity(0.8))
-            }
-            
-            Link("Get Key", destination: URL(string: store.bgProvider.getKeyURL)!)
-                .font(.caption)
-                .foregroundColor(.blue)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color(white: 0.13))
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(Color.white.opacity(0.08)),
-            alignment: .bottom
-        )
-    }
-    
-    private func loadCurrentKey() {
-        apiKeyInput = UserDefaults.standard.string(forKey: store.bgProvider.keySettingName) ?? ""
     }
     
     // MARK: - Provider Tab Button
@@ -409,7 +313,7 @@ struct FetchBackgroundModal: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage  = error.localizedDescription
+                    errorMessage  = "Failed to load: \(error.localizedDescription)"
                     isSearching   = false
                     isLoadingMore = false
                 }
