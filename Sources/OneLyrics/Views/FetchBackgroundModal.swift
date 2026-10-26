@@ -7,157 +7,277 @@ struct FetchBackgroundModal: View {
     @State private var isSearching = false
     @State private var downloadingId: String? = nil
     @State private var searchTask: Task<Void, Never>? = nil
-    
     @State private var currentPage: Int = 1
     @State private var isLoadingMore: Bool = false
     @State private var hasMoreResults: Bool = true
+    @State private var errorMessage: String? = nil
     
-    let columns = [
-        GridItem(.adaptive(minimum: 150), spacing: 16)
-    ]
+    let columns = [GridItem(.adaptive(minimum: 148), spacing: 12)]
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
+            
+            // ── Header ───────────────────────────────────────────────
+            HStack(spacing: 10) {
                 Image(systemName: "photo.on.rectangle.angled")
                     .foregroundColor(.blue)
-                Text("Search Backgrounds (Unsplash)")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Search Backgrounds")
                     .font(.headline)
                     .foregroundColor(.white)
                 Spacer()
-                Button(action: { isPresented = false }) {
+                Button { isPresented = false } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.gray)
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             .background(Color(white: 0.12))
             
-            // Search Bar
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundColor(.gray)
-                TextField("Search nature, neon, abstract...", text: $store.bgSearchQuery)
+            // ── Provider Picker ──────────────────────────────────────
+            HStack(spacing: 0) {
+                ForEach(ImageProvider.allCases) { provider in
+                    providerTab(provider)
+                }
+            }
+            .background(Color(white: 0.10))
+            
+            // ── Search Bar ───────────────────────────────────────────
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.gray)
+                    .font(.system(size: 13))
+                TextField("Search \(store.bgProvider.rawValue)...", text: $store.bgSearchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .foregroundColor(.white)
                     .onChange(of: store.bgSearchQuery) { _ in
-                        searchTask?.cancel()
-                        if store.bgSearchQuery.isEmpty {
-                            store.bgSearchResults = []
-                        } else {
-                            searchTask = Task {
-                                do {
-                                    try await Task.sleep(nanoseconds: 500_000_000)
-                                    guard !Task.isCancelled else { return }
-                                    await MainActor.run { performSearch(isNewSearch: true) }
-                                } catch {}
-                            }
-                        }
+                        triggerSearch()
                     }
-                    .onSubmit {
-                        performSearch(isNewSearch: true)
-                    }
+                    .onSubmit { performSearch(isNewSearch: true) }
                 
                 if isSearching && !isLoadingMore {
-                    ProgressView().scaleEffect(0.6).padding(.leading, 8)
+                    ProgressView().scaleEffect(0.6)
+                }
+                if !store.bgSearchQuery.isEmpty {
+                    Button { store.bgSearchQuery = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.gray.opacity(0.7))
+                            .font(.system(size: 13))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
             .background(Color(white: 0.15))
-            .cornerRadius(8)
-            .padding()
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             
-            // Results Grid
+            // ── Error Banner ─────────────────────────────────────────
+            if let err = errorMessage {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text(err)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                    Spacer()
+                    Button { errorMessage = nil } label: {
+                        Image(systemName: "xmark").font(.caption).foregroundColor(.gray)
+                    }.buttonStyle(.plain)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12))
+                .cornerRadius(8)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+            }
+            
+            // ── Results Grid ─────────────────────────────────────────
             if store.bgSearchResults.isEmpty && !isSearching && !store.bgSearchQuery.isEmpty {
-                VStack {
+                VStack(spacing: 10) {
                     Spacer()
                     Image(systemName: "photo.badge.exclamationmark")
-                        .font(.system(size: 40))
-                        .foregroundColor(.gray.opacity(0.5))
-                        .padding(.bottom, 8)
-                    Text("No photos found.")
+                        .font(.system(size: 36))
+                        .foregroundColor(.gray.opacity(0.4))
+                    Text("No photos found on \(store.bgProvider.rawValue).")
                         .foregroundColor(.gray)
+                        .font(.callout)
+                    Spacer()
+                }
+            } else if store.bgSearchResults.isEmpty && !isSearching {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 36))
+                        .foregroundColor(.gray.opacity(0.3))
+                    Text("Search for backgrounds on \(store.bgProvider.rawValue)")
+                        .foregroundColor(.gray.opacity(0.6))
+                        .font(.callout)
                     Spacer()
                 }
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(store.bgSearchResults) { result in
-                            ZStack(alignment: .bottomTrailing) {
-                                // Thumbnail Image
-                                AsyncImage(url: URL(string: result.urls?.thumb ?? "")) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image.resizable().aspectRatio(16/9, contentMode: .fill)
-                                    default:
-                                        Rectangle().fill(Color(white: 0.2))
-                                            .aspectRatio(16/9, contentMode: .fit)
-                                    }
-                                }
-                                .frame(height: 90)
-                                .clipped()
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                                )
-                                
-                                // Overlay Gradient for author name
-                                LinearGradient(colors: [.black.opacity(0.8), .clear], startPoint: .bottom, endPoint: .top)
-                                    .frame(height: 30)
-                                
-                                HStack {
-                                    Text("By \(result.user?.name ?? "Unknown")")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.white.opacity(0.8))
-                                        .lineLimit(1)
-                                    Spacer()
-                                    if downloadingId == result.id {
-                                        ProgressView().scaleEffect(0.5)
-                                    } else {
-                                        Image(systemName: "arrow.down.circle.fill")
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .padding(6)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if result.urls?.regular != nil {
-                                    downloadAndApply(result: result)
-                                }
-                            }
-                            .disabled(downloadingId != nil)
+                            resultCard(result)
                         }
                         
+                        // Infinite scroll trigger
                         if hasMoreResults && !store.bgSearchResults.isEmpty {
                             Color.clear
-                                .frame(height: 20)
+                                .frame(height: 1)
                                 .onAppear {
-                                    if !isLoadingMore {
-                                        performSearch(isNewSearch: false)
-                                    }
+                                    if !isLoadingMore { performSearch(isNewSearch: false) }
                                 }
-                            
                             if isLoadingMore {
                                 ProgressView()
                                     .frame(maxWidth: .infinity)
+                                    .padding()
                             }
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
                 }
             }
         }
-        .frame(width: 700, height: 500)
+        .frame(width: 720, height: 520)
         .background(Color(white: 0.08))
         .cornerRadius(12)
-        .shadow(radius: 20)
+        .shadow(radius: 24)
+        .onChange(of: store.bgProvider) { _ in
+            // Clear results and re-search when provider changes
+            store.bgSearchResults = []
+            errorMessage = nil
+            hasMoreResults = true
+            if !store.bgSearchQuery.isEmpty {
+                performSearch(isNewSearch: true)
+            }
+        }
+    }
+    
+    // MARK: - Provider Tab Button
+    
+    @ViewBuilder
+    private func providerTab(_ provider: ImageProvider) -> some View {
+        let isSelected = store.bgProvider == provider
+        Button {
+            store.bgProvider = provider
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: provider.iconName)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(provider.rawValue)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+            }
+            .foregroundColor(isSelected ? .white : .gray)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                isSelected
+                    ? Color.blue.opacity(0.25)
+                    : Color.clear
+            )
+            .overlay(
+                Rectangle()
+                    .frame(height: 2)
+                    .foregroundColor(isSelected ? .blue : .clear),
+                alignment: .bottom
+            )
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
+    }
+    
+    // MARK: - Result Card
+    
+    @ViewBuilder
+    private func resultCard(_ result: ImageSearchResult) -> some View {
+        ZStack(alignment: .bottom) {
+            AsyncImage(url: URL(string: result.thumbURL)) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(16/9, contentMode: .fill)
+                case .failure:
+                    Rectangle()
+                        .fill(Color(white: 0.18))
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .overlay(
+                            Image(systemName: "photo.slash")
+                                .foregroundColor(.gray.opacity(0.5))
+                        )
+                default:
+                    Rectangle()
+                        .fill(Color(white: 0.18))
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .overlay(ProgressView().scaleEffect(0.5))
+                }
+            }
+            .frame(height: 88)
+            .clipped()
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            
+            // Gradient + author + download icon
+            LinearGradient(
+                colors: [.black.opacity(0.75), .clear],
+                startPoint: .bottom, endPoint: .top
+            )
+            .frame(height: 32)
+            .cornerRadius(8)
+            
+            HStack {
+                Text(result.authorName)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.85))
+                    .lineLimit(1)
+                Spacer()
+                if downloadingId == result.id {
+                    ProgressView().scaleEffect(0.45).tint(.white)
+                } else {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundColor(.white.opacity(0.9))
+                        .font(.system(size: 14))
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 4)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+        .scaleEffect(downloadingId == result.id ? 0.96 : 1.0)
+        .animation(.spring(response: 0.2), value: downloadingId == result.id)
+        .onTapGesture { downloadAndApply(result: result) }
+        .disabled(downloadingId != nil)
+    }
+    
+    // MARK: - Search Logic
+    
+    private func triggerSearch() {
+        searchTask?.cancel()
+        if store.bgSearchQuery.isEmpty {
+            store.bgSearchResults = []
+            errorMessage = nil
+        } else {
+            searchTask = Task {
+                do {
+                    try await Task.sleep(nanoseconds: 450_000_000)
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run { performSearch(isNewSearch: true) }
+                } catch {}
+            }
+        }
     }
     
     private func performSearch(isNewSearch: Bool) {
@@ -167,56 +287,54 @@ struct FetchBackgroundModal: View {
             isSearching = true
             currentPage = 1
             hasMoreResults = true
-            store.bgSearchResults.removeAll()
+            store.bgSearchResults = []
+            errorMessage = nil
         } else {
             isLoadingMore = true
             currentPage += 1
         }
         
-        let queryToSearch = store.bgSearchQuery
-        let pageToSearch = currentPage
+        let query    = store.bgSearchQuery
+        let page     = currentPage
+        let provider = store.bgProvider
         
         Task {
             do {
-                let res = try await UnsplashManager.shared.search(query: queryToSearch, page: pageToSearch)
-                DispatchQueue.main.async {
+                let results = try await ImageSearchManager.shared.search(query: query, provider: provider, page: page)
+                await MainActor.run {
                     if isNewSearch {
-                        self.store.bgSearchResults = res
+                        store.bgSearchResults = results
                     } else {
-                        self.store.bgSearchResults.append(contentsOf: res)
+                        store.bgSearchResults.append(contentsOf: results)
                     }
-                    if res.isEmpty {
-                        self.hasMoreResults = false
-                    }
-                    self.isSearching = false
-                    self.isLoadingMore = false
+                    hasMoreResults = !results.isEmpty
+                    isSearching    = false
+                    isLoadingMore  = false
                 }
             } catch {
-                print("Unsplash Search error: \(error)")
-                DispatchQueue.main.async {
-                    self.isSearching = false
-                    self.isLoadingMore = false
+                await MainActor.run {
+                    errorMessage  = "Failed to load from \(provider.rawValue): \(error.localizedDescription)"
+                    isSearching   = false
+                    isLoadingMore = false
                 }
             }
         }
     }
     
-    private func downloadAndApply(result: UnsplashResult) {
-        guard let urlStr = result.urls?.regular else { return }
+    private func downloadAndApply(result: ImageSearchResult) {
         downloadingId = result.id
-        
         Task {
             do {
-                let url = try await UnsplashManager.shared.downloadImage(urlStr: urlStr)
-                DispatchQueue.main.async {
+                let url = try await ImageSearchManager.shared.downloadImage(result)
+                await MainActor.run {
                     store.setBackground(url: url)
-                    self.downloadingId = nil
-                    self.isPresented = false
+                    downloadingId = nil
+                    isPresented   = false
                 }
             } catch {
-                print("Unsplash Download error: \(error)")
-                DispatchQueue.main.async {
-                    self.downloadingId = nil
+                await MainActor.run {
+                    errorMessage  = "Download failed: \(error.localizedDescription)"
+                    downloadingId = nil
                 }
             }
         }
