@@ -17,7 +17,7 @@ class ProjectStore: ObservableObject {
     // Modal Persistent States
     @Published var bgSearchQuery: String = ""
     @Published var bgSearchResults: [ImageSearchResult] = []
-    @Published var bgProvider: ImageProvider = .openverse
+    @Published var bgProvider: ImageProvider = .unsplash
     
     @Published var audioSearchQuery: String = ""
     @Published var audioSearchResults: [YTResult] = []

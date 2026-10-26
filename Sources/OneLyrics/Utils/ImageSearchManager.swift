@@ -4,42 +4,33 @@ import AppKit
 // MARK: - Common Model
 
 enum ImageProvider: String, CaseIterable, Identifiable {
-    case unsplash  = "Unsplash"
-    case openverse = "Openverse"
-    case wikimedia = "Wikimedia"
+    case unsplash = "Unsplash"
+    case pixabay  = "Pixabay"
+    case pexels   = "Pexels"
 
     var id: String { rawValue }
 
     var iconName: String {
         switch self {
-        case .unsplash:  return "photo.on.rectangle"
-        case .openverse: return "photo.stack.fill"
-        case .wikimedia: return "globe"
-        }
-    }
-
-    /// Providers that need a user-supplied API key before searching.
-    var requiresKey: Bool {
-        switch self {
-        case .unsplash:  return true
-        case .openverse: return false   // free, no key
-        case .wikimedia: return false   // free, no key
+        case .unsplash: return "camera.fill"
+        case .pixabay:  return "photo.stack.fill"
+        case .pexels:   return "rectangle.stack.fill"
         }
     }
 
     var keySettingName: String {
         switch self {
-        case .unsplash:  return "unsplashAPIKey"
-        case .openverse: return ""
-        case .wikimedia: return ""
+        case .unsplash: return "unsplashAPIKey"
+        case .pixabay:   return "pixabayAPIKey"
+        case .pexels:    return "pexelsAPIKey"
         }
     }
 
     var getKeyURL: String {
         switch self {
-        case .unsplash:  return "https://unsplash.com/developers"
-        case .openverse: return ""
-        case .wikimedia: return ""
+        case .unsplash: return "https://unsplash.com/developers"
+        case .pixabay:   return "https://pixabay.com/api/docs/"
+        case .pexels:    return "https://www.pexels.com/api/"
         }
     }
 }
@@ -58,34 +49,82 @@ struct ImageSearchResult: Identifiable {
 class ImageSearchManager {
     static let shared = ImageSearchManager()
 
+    // Default keys (can be overridden in UserDefaults by the user)
+    private let defaultPixabayKey = "49083688-f2ad40a3e88ca4d5bc35fa7fd"
+    private let defaultPexelsKey  = "NsB3frVSq5fkZB9P3bGK4JQeREHJa5xWFiXNDrVwpDRmVmWovdlGnwR8"
+
     // MARK: - Search
 
     func search(query: String, provider: ImageProvider, page: Int = 1) async throws -> [ImageSearchResult] {
         switch provider {
-        case .unsplash:  return try await searchUnsplash(query: query, page: page)
-        case .openverse: return try await searchOpenverse(query: query, page: page)
-        case .wikimedia: return try await searchWikimedia(query: query, page: page)
+        case .unsplash: return try await searchUnsplash(query: query, page: page)
+        case .pixabay:  return try await searchPixabay(query: query, page: page)
+        case .pexels:   return try await searchPexels(query: query, page: page)
         }
     }
 
-    // MARK: - Unsplash (requires free API key — https://unsplash.com/developers)
+    // MARK: - Unsplash
 
     private func searchUnsplash(query: String, page: Int) async throws -> [ImageSearchResult] {
-        let key = UserDefaults.standard.string(forKey: "unsplashAPIKey") ?? ""
-        guard !key.isEmpty else { throw ImageSearchError.noAPIKey("Unsplash") }
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://api.unsplash.com/search/photos?query=\(encoded)&per_page=30&page=\(page)&orientation=landscape") else {
+        let userKey = UserDefaults.standard.string(forKey: "unsplashAPIKey")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return []
+        }
+
+        // If official API key is provided, use api.unsplash.com
+        if !userKey.isEmpty {
+            guard let url = URL(string: "https://api.unsplash.com/search/photos?query=\(encoded)&per_page=30&page=\(page)&orientation=landscape") else {
+                return []
+            }
+            var request = URLRequest(url: url, timeoutInterval: 15)
+            request.setValue("Client-ID \(userKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("OneLyrics/2.0", forHTTPHeaderField: "User-Agent")
+            request.setValue("v1", forHTTPHeaderField: "Accept-Version")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode != 200 {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                throw ImageSearchError.apiError("Unsplash HTTP \(httpResp.statusCode): \(body)")
+            }
+
+            struct Resp: Codable {
+                struct Photo: Codable {
+                    let id: String
+                    let color: String?
+                    let urls: URLs?
+                    let user: User?
+                    struct URLs: Codable { let thumb: String?; let regular: String?; let full: String? }
+                    struct User: Codable { let name: String? }
+                }
+                let results: [Photo]
+            }
+
+            let decoded = try JSONDecoder().decode(Resp.self, from: data)
+            return decoded.results.compactMap { p in
+                guard let thumb = p.urls?.thumb, let full = p.urls?.regular ?? p.urls?.full else { return nil }
+                return ImageSearchResult(id: p.id, thumbURL: thumb, fullURL: full,
+                                         authorName: p.user?.name ?? "Unsplash",
+                                         provider: .unsplash, color: p.color)
+            }
+        }
+
+        // Fallback: Unsplash napi endpoint
+        guard let url = URL(string: "https://unsplash.com/napi/search/photos?query=\(encoded)&per_page=30&page=\(page)") else {
             return []
         }
         var request = URLRequest(url: url, timeoutInterval: 15)
-        request.setValue("Client-ID \(key)", forHTTPHeaderField: "Authorization")
-        request.setValue("OneLyricsNative/2.0", forHTTPHeaderField: "User-Agent")
-        request.setValue("v1", forHTTPHeaderField: "Accept-Version")
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("https://unsplash.com", forHTTPHeaderField: "Referer")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        if let httpResp = response as? HTTPURLResponse, httpResp.statusCode != 200 {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw ImageSearchError.apiError("Unsplash HTTP \(httpResp.statusCode): \(body)")
+        if let httpResp = response as? HTTPURLResponse {
+            if httpResp.statusCode == 401 || httpResp.statusCode == 403 {
+                throw ImageSearchError.noAPIKey("Unsplash")
+            } else if httpResp.statusCode != 200 {
+                throw ImageSearchError.apiError("Unsplash HTTP \(httpResp.statusCode)")
+            }
         }
 
         struct Resp: Codable {
@@ -94,115 +133,103 @@ class ImageSearchManager {
                 let color: String?
                 let urls: URLs?
                 let user: User?
-                struct URLs: Codable {
-                    let thumb: String?
-                    let regular: String?
-                    let full: String?
-                }
-                struct User: Codable {
-                    let name: String?
-                }
+                struct URLs: Codable { let thumb: String?; let regular: String? }
+                struct User: Codable { let name: String? }
             }
             let results: [Photo]
         }
 
         let decoded = try JSONDecoder().decode(Resp.self, from: data)
         return decoded.results.compactMap { p in
-            guard let thumb = p.urls?.thumb, let full = p.urls?.regular ?? p.urls?.full else { return nil }
+            guard let thumb = p.urls?.thumb, let full = p.urls?.regular else { return nil }
             return ImageSearchResult(id: p.id, thumbURL: thumb, fullURL: full,
-                                     authorName: p.user?.name ?? "Unsplash",
+                                     authorName: p.user?.name ?? "Unknown",
                                      provider: .unsplash, color: p.color)
         }
     }
 
-    // MARK: - Openverse (FREE — no key, CC-licensed, maintained by WordPress)
+    // MARK: - Pixabay
 
-    private func searchOpenverse(query: String, page: Int) async throws -> [ImageSearchResult] {
+    private func searchPixabay(query: String, page: Int) async throws -> [ImageSearchResult] {
+        let userKey = UserDefaults.standard.string(forKey: "pixabayAPIKey")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let key = !userKey.isEmpty ? userKey : defaultPixabayKey
+
         guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://api.openverse.org/v1/images/?q=\(encoded)&page_size=30&page=\(page)&extension=jpg,png&category=photograph") else {
+              let url = URL(string: "https://pixabay.com/api/?key=\(key)&q=\(encoded)&image_type=photo&per_page=30&page=\(page)&safesearch=true") else {
             return []
         }
         var request = URLRequest(url: url, timeoutInterval: 15)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("OneLyricsNative/2.0 (https://github.com/supreeththakur/OneLyricsNative)", forHTTPHeaderField: "User-Agent")
+        request.setValue("OneLyrics/2.0", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         if let httpResp = response as? HTTPURLResponse, httpResp.statusCode != 200 {
-            throw ImageSearchError.apiError("Openverse HTTP \(httpResp.statusCode)")
+            let body = String(data: data, encoding: .utf8) ?? ""
+            if httpResp.statusCode == 400 || httpResp.statusCode == 401 {
+                throw ImageSearchError.noAPIKey("Pixabay")
+            }
+            throw ImageSearchError.apiError("Pixabay HTTP \(httpResp.statusCode): \(body)")
+        }
+
+        struct Resp: Codable {
+            struct Hit: Codable {
+                let id: Int
+                let previewURL: String?
+                let largeImageURL: String?
+                let webformatURL: String?
+                let user: String?
+            }
+            let hits: [Hit]
+        }
+
+        let decoded = try JSONDecoder().decode(Resp.self, from: data)
+        return decoded.hits.compactMap { h in
+            guard let thumb = h.previewURL, let full = h.largeImageURL ?? h.webformatURL else { return nil }
+            return ImageSearchResult(id: "\(h.id)", thumbURL: thumb, fullURL: full,
+                                     authorName: h.user ?? "Pixabay", provider: .pixabay, color: nil)
+        }
+    }
+
+    // MARK: - Pexels
+
+    private func searchPexels(query: String, page: Int) async throws -> [ImageSearchResult] {
+        let userKey = UserDefaults.standard.string(forKey: "pexelsAPIKey")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let key = !userKey.isEmpty ? userKey : defaultPexelsKey
+
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://api.pexels.com/v1/search?query=\(encoded)&per_page=30&page=\(page)") else {
+            return []
+        }
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.setValue(key, forHTTPHeaderField: "Authorization")
+        request.setValue("OneLyrics/2.0", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let httpResp = response as? HTTPURLResponse, httpResp.statusCode != 200 {
+            if httpResp.statusCode == 401 || httpResp.statusCode == 403 {
+                throw ImageSearchError.noAPIKey("Pexels")
+            }
+            throw ImageSearchError.apiError("Pexels HTTP \(httpResp.statusCode)")
         }
 
         struct Resp: Codable {
             struct Photo: Codable {
-                let id: String
-                let url: String?
-                let thumbnail: String?
-                let creator: String?
-            }
-            let results: [Photo]
-        }
-
-        let decoded = try JSONDecoder().decode(Resp.self, from: data)
-        return decoded.results.compactMap { p in
-            guard let full = p.url else { return nil }
-            let thumb = p.thumbnail ?? full
-            return ImageSearchResult(id: p.id, thumbURL: thumb, fullURL: full,
-                                     authorName: p.creator ?? "Openverse",
-                                     provider: .openverse, color: nil)
-        }
-    }
-
-    // MARK: - Wikimedia Commons (FREE — no key, massive public-domain collection)
-
-    private func searchWikimedia(query: String, page: Int) async throws -> [ImageSearchResult] {
-        let offset = (page - 1) * 30
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=\(encoded)%20filetype:bitmap&gsrlimit=30&gsroffset=\(offset)&prop=imageinfo&iiprop=url|mime|extmetadata&iiurlwidth=400&format=json&origin=*") else {
-            return []
-        }
-        var request = URLRequest(url: url, timeoutInterval: 15)
-        request.setValue("OneLyricsNative/2.0", forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let httpResp = response as? HTTPURLResponse, httpResp.statusCode != 200 {
-            throw ImageSearchError.apiError("Wikimedia HTTP \(httpResp.statusCode)")
-        }
-
-        struct Resp: Codable {
-            struct Query: Codable {
-                struct Page: Codable {
-                    let pageid: Int
-                    let imageinfo: [ImageInfo]?
-                    struct ImageInfo: Codable {
-                        let url: String?
-                        let thumburl: String?
-                        let mime: String?
-                        let extmetadata: Meta?
-                        struct Meta: Codable {
-                            let Artist: MetaValue?
-                            struct MetaValue: Codable {
-                                let value: String?
-                            }
-                        }
-                    }
+                let id: Int
+                let photographer: String?
+                let src: Src?
+                struct Src: Codable {
+                    let medium: String?
+                    let large2x: String?
+                    let original: String?
                 }
-                let pages: [String: Page]?
             }
-            let query: Query?
+            let photos: [Photo]
         }
 
         let decoded = try JSONDecoder().decode(Resp.self, from: data)
-        guard let pages = decoded.query?.pages else { return [] }
-        return pages.values.compactMap { page in
-            guard let info = page.imageinfo?.first,
-                  let mime = info.mime, mime.hasPrefix("image/"),
-                  let full = info.url else { return nil }
-            let thumb = info.thumburl ?? full
-            // Strip HTML tags from artist name
-            let rawAuthor = info.extmetadata?.Artist?.value ?? "Wikimedia"
-            let author = rawAuthor.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            return ImageSearchResult(id: "\(page.pageid)", thumbURL: thumb, fullURL: full,
-                                     authorName: author.isEmpty ? "Wikimedia" : author,
-                                     provider: .wikimedia, color: nil)
+        return decoded.photos.compactMap { p in
+            guard let thumb = p.src?.medium, let full = p.src?.large2x ?? p.src?.original else { return nil }
+            return ImageSearchResult(id: "\(p.id)", thumbURL: thumb, fullURL: full,
+                                     authorName: p.photographer ?? "Pexels", provider: .pexels, color: nil)
         }
     }
 
@@ -243,7 +270,7 @@ enum ImageSearchError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noAPIKey(let provider):
-            return "\(provider) API key required. Add it in Settings."
+            return "\(provider) requires an API key. Tap the 🔑 icon above to set your free key."
         case .apiError(let msg):
             return msg
         }

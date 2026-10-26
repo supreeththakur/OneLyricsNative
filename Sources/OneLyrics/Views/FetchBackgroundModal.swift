@@ -11,20 +11,10 @@ struct FetchBackgroundModal: View {
     @State private var isLoadingMore: Bool = false
     @State private var hasMoreResults: Bool = true
     @State private var errorMessage: String? = nil
+    @State private var showKeySettings: Bool = false
     @State private var apiKeyInput: String = ""
     
     let columns = [GridItem(.adaptive(minimum: 148), spacing: 12)]
-    
-    /// Current API key for the selected provider (empty if not required or not set)
-    private var currentAPIKey: String {
-        let key = store.bgProvider.keySettingName
-        guard !key.isEmpty else { return "no-key-required" }
-        return UserDefaults.standard.string(forKey: key) ?? ""
-    }
-    
-    private var providerNeedsKey: Bool {
-        store.bgProvider.requiresKey && currentAPIKey.isEmpty
-    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -37,7 +27,26 @@ struct FetchBackgroundModal: View {
                 Text("Search Backgrounds")
                     .font(.headline)
                     .foregroundColor(.white)
+                
                 Spacer()
+                
+                // Key / Settings Button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showKeySettings.toggle()
+                        if showKeySettings {
+                            loadCurrentKey()
+                        }
+                    }
+                } label: {
+                    Image(systemName: showKeySettings ? "key.fill" : "key")
+                        .foregroundColor(showKeySettings ? .yellow : .gray)
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(.plain)
+                .help("Configure API Keys")
+                
+                // Close Button
                 Button { isPresented = false } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.gray)
@@ -57,10 +66,10 @@ struct FetchBackgroundModal: View {
             }
             .background(Color(white: 0.10))
             
-            // ── API Key Banner ───────────────────────────────────────
-            if providerNeedsKey {
-                apiKeyBanner
-            } else {
+            // ── Key Settings Drawer ──────────────────────────────────
+            if showKeySettings {
+                keySettingsDrawer
+            }
             
             // ── Search Bar ───────────────────────────────────────────
             HStack(spacing: 8) {
@@ -97,13 +106,24 @@ struct FetchBackgroundModal: View {
             
             // ── Error Banner ─────────────────────────────────────────
             if let err = errorMessage {
-                HStack {
+                HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                     Text(err)
                         .font(.caption)
                         .foregroundColor(.orange)
                     Spacer()
+                    if err.contains("API key") || err.contains("🔑") {
+                        Button("Enter Key") {
+                            withAnimation {
+                                showKeySettings = true
+                                loadCurrentKey()
+                            }
+                        }
+                        .font(.caption.bold())
+                        .foregroundColor(.yellow)
+                        .buttonStyle(.plain)
+                    }
                     Button { errorMessage = nil } label: {
                         Image(systemName: "xmark").font(.caption).foregroundColor(.gray)
                     }.buttonStyle(.plain)
@@ -163,71 +183,79 @@ struct FetchBackgroundModal: View {
                     .padding(.bottom, 14)
                 }
             }
-            } // end else (providerNeedsKey)
         }
         .frame(width: 720, height: 520)
         .background(Color(white: 0.08))
         .cornerRadius(12)
         .shadow(radius: 24)
         .onChange(of: store.bgProvider) { _ in
-            // Clear results and re-search when provider changes
             store.bgSearchResults = []
             errorMessage = nil
             hasMoreResults = true
-            apiKeyInput = ""
-            if !store.bgSearchQuery.isEmpty && !providerNeedsKey {
+            loadCurrentKey()
+            if !store.bgSearchQuery.isEmpty {
                 performSearch(isNewSearch: true)
             }
         }
     }
     
-    // MARK: - API Key Banner
+    // MARK: - Key Settings Drawer
     
     @ViewBuilder
-    private var apiKeyBanner: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            VStack(spacing: 14) {
-                Image(systemName: "key.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(.yellow.opacity(0.8))
-                Text("\(store.bgProvider.rawValue) API Key Required")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Text("Get a free key at:")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                Link(store.bgProvider.getKeyURL, destination: URL(string: store.bgProvider.getKeyURL)!)
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                HStack(spacing: 8) {
-                    SecureField("Paste your \(store.bgProvider.rawValue) API key here", text: $apiKeyInput)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(Color(white: 0.18))
-                        .cornerRadius(8)
-                    Button("Save") {
-                        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmed.isEmpty else { return }
-                        UserDefaults.standard.set(trimmed, forKey: store.bgProvider.keySettingName)
-                        apiKeyInput = ""
-                        // Trigger re-evaluation by toggling provider
-                        let p = store.bgProvider
-                        store.bgProvider = p
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
-                    .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .frame(maxWidth: 400)
+    private var keySettingsDrawer: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "key.fill")
+                .foregroundColor(.yellow)
+                .font(.system(size: 12))
+            Text("\(store.bgProvider.rawValue) API Key:")
+                .font(.caption)
+                .foregroundColor(.gray)
+            
+            SecureField("Paste your key here", text: $apiKeyInput)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(white: 0.18))
+                .cornerRadius(6)
+            
+            Button("Save") {
+                let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                UserDefaults.standard.set(trimmed, forKey: store.bgProvider.keySettingName)
+                errorMessage = nil
+                performSearch(isNewSearch: true)
             }
-            .padding(24)
-            Spacer()
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            
+            if !apiKeyInput.isEmpty {
+                Button("Clear") {
+                    UserDefaults.standard.removeObject(forKey: store.bgProvider.keySettingName)
+                    apiKeyInput = ""
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundColor(.red.opacity(0.8))
+            }
+            
+            Link("Get Key", destination: URL(string: store.bgProvider.getKeyURL)!)
+                .font(.caption)
+                .foregroundColor(.blue)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(white: 0.13))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.white.opacity(0.08)),
+            alignment: .bottom
+        )
+    }
+    
+    private func loadCurrentKey() {
+        apiKeyInput = UserDefaults.standard.string(forKey: store.bgProvider.keySettingName) ?? ""
     }
     
     // MARK: - Provider Tab Button
@@ -381,7 +409,7 @@ struct FetchBackgroundModal: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage  = "Failed to load from \(provider.rawValue): \(error.localizedDescription)"
+                    errorMessage  = error.localizedDescription
                     isSearching   = false
                     isLoadingMore = false
                 }
