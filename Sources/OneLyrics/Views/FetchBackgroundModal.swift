@@ -11,8 +11,20 @@ struct FetchBackgroundModal: View {
     @State private var isLoadingMore: Bool = false
     @State private var hasMoreResults: Bool = true
     @State private var errorMessage: String? = nil
+    @State private var apiKeyInput: String = ""
     
     let columns = [GridItem(.adaptive(minimum: 148), spacing: 12)]
+    
+    /// Current API key for the selected provider (empty if not required or not set)
+    private var currentAPIKey: String {
+        let key = store.bgProvider.keySettingName
+        guard !key.isEmpty else { return "no-key-required" }
+        return UserDefaults.standard.string(forKey: key) ?? ""
+    }
+    
+    private var providerNeedsKey: Bool {
+        store.bgProvider.requiresKey && currentAPIKey.isEmpty
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +56,11 @@ struct FetchBackgroundModal: View {
                 }
             }
             .background(Color(white: 0.10))
+            
+            // ── API Key Banner ───────────────────────────────────────
+            if providerNeedsKey {
+                apiKeyBanner
+            } else {
             
             // ── Search Bar ───────────────────────────────────────────
             HStack(spacing: 8) {
@@ -146,6 +163,7 @@ struct FetchBackgroundModal: View {
                     .padding(.bottom, 14)
                 }
             }
+            } // end else (providerNeedsKey)
         }
         .frame(width: 720, height: 520)
         .background(Color(white: 0.08))
@@ -156,10 +174,60 @@ struct FetchBackgroundModal: View {
             store.bgSearchResults = []
             errorMessage = nil
             hasMoreResults = true
-            if !store.bgSearchQuery.isEmpty {
+            apiKeyInput = ""
+            if !store.bgSearchQuery.isEmpty && !providerNeedsKey {
                 performSearch(isNewSearch: true)
             }
         }
+    }
+    
+    // MARK: - API Key Banner
+    
+    @ViewBuilder
+    private var apiKeyBanner: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            VStack(spacing: 14) {
+                Image(systemName: "key.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.yellow.opacity(0.8))
+                Text("\(store.bgProvider.rawValue) API Key Required")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Text("Get a free key at:")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                Link(store.bgProvider.getKeyURL, destination: URL(string: store.bgProvider.getKeyURL)!)
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                HStack(spacing: 8) {
+                    SecureField("Paste your \(store.bgProvider.rawValue) API key here", text: $apiKeyInput)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color(white: 0.18))
+                        .cornerRadius(8)
+                    Button("Save") {
+                        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+                        UserDefaults.standard.set(trimmed, forKey: store.bgProvider.keySettingName)
+                        apiKeyInput = ""
+                        // Trigger re-evaluation by toggling provider
+                        let p = store.bgProvider
+                        store.bgProvider = p
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .frame(maxWidth: 400)
+            }
+            .padding(24)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Provider Tab Button
