@@ -34,9 +34,35 @@ class TransliterationEngine {
         return .unknown
     }
     
+    // MARK: - Indic Numeral Normalization
+    /// Replaces any Indic-script digit (Devanagari, Gurmukhi, Kannada, Tamil, etc.)
+    /// with its ASCII equivalent so they survive transliteration intact.
+    private func normalizeIndicNumerals(_ text: String) -> String {
+        // Map every Unicode Nd (decimal digit) character that is NOT already ASCII
+        var result = ""
+        for scalar in text.unicodeScalars {
+            // Only touch non-ASCII digits that have a numeric value
+            if scalar.value > 127,
+               let value = scalar.properties.numericType,
+               case .decimal = value {
+                // numericValue gives the actual digit 0-9
+                let digit = Int(scalar.properties.numericValue ?? -1)
+                if digit >= 0 && digit <= 9 {
+                    result += "\(digit)"
+                    continue
+                }
+            }
+            result += String(scalar)
+        }
+        return result
+    }
+    
     func transliterate(text: String) -> String {
+        // Step 0: normalize Indic digits → ASCII digits (e.g. २४ → 24, ੨੪ → 24)
+        let normalized = normalizeIndicNumerals(text)
+        
         // Split by words/whitespace to preserve mixed languages
-        let words = text.components(separatedBy: .whitespacesAndNewlines)
+        let words = normalized.components(separatedBy: .whitespacesAndNewlines)
         let newWords = words.map { word -> String in
             let lang = detectLanguage(text: word)
             if lang == .hindi {
@@ -54,7 +80,7 @@ class TransliterationEngine {
         var wordIndex = 0
         var currentWord = ""
         
-        for scalar in text.unicodeScalars {
+        for scalar in normalized.unicodeScalars {
             if CharacterSet.whitespacesAndNewlines.contains(scalar) {
                 if !currentWord.isEmpty {
                     result += newWords[wordIndex]
@@ -72,6 +98,7 @@ class TransliterationEngine {
         
         return result
     }
+
     
     // MARK: - Hindi Transliteration (Advanced)
     private func transliterateHindiWord(_ word: String) -> String {
